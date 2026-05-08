@@ -1,5 +1,33 @@
 # Current Workflow User Manual
 
+## 0. 标准启动方式
+
+当前正式工作流的标准启动命令是：
+
+```bash
+./server_start_workflow.sh xx.yaml logname
+```
+
+例如：
+
+```bash
+./server_start_workflow.sh Pt-water-interface_roundN.yaml pt-water-interface_r1_1
+```
+
+其中：
+
+- `xx.yaml`
+  - 顶层 workflow YAML
+- `logname`
+  - 本次运行对应的日志名
+  - 可以不带 `.log` 后缀
+
+这条命令通过：
+
+- [server_start_workflow.sh](C:\Users\1\Desktop\mlff_workflow\server_start_workflow.sh)
+
+启动当前正式主线。
+
 这份手册描述当前正式主线的工作流程、用户输入、运行时产物、配置文件语义和日志查看方式。
 
 当前正式主线是：
