@@ -59,7 +59,7 @@ Windows 仍然适合用于：
    - 运行 `workflow.py`
    - 运行 MACE finetune
    - 运行 DeepMD 相关 Python 逻辑
-2. **可选的 CP2K 执行环境**
+2. **可选的 CP2K 执行环境**(目前可以忽略，FP计算接口尚未测试)
    - 仅当 workflow 内部直接执行 CP2K DFT 时使用
 
 用户不需要和历史服务器完全使用相同的环境名字，但必须满足下面这两条能力要求：
