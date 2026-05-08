@@ -1,0 +1,54 @@
+# Default: ignore everything in the current workspace.
+/*
+
+# Keep Git control files.
+!/.gitignore
+
+# Upload selected top-level files.
+!/workflow.py
+!/server_start_workflow.sh
+!/Pt-water-interface_roundN.yaml
+!/USER_MANUAL.md
+!/CORE_ALGORITHM_GUIDE.md
+!/ENVIRONMENT_REQUIREMENTS.md
+
+# Upload selected source/config directories.
+!/configs/
+!/configs/**
+!/workflow_core/
+!/workflow_core/**
+!/workflow_runtime/
+!/workflow_runtime/**
+!/workflow_backends/
+!/workflow_backends/**
+!/workflow_policies/
+!/workflow_policies/**
+!/workflow_artifacts/
+!/workflow_artifacts/**
+
+# Keep user_assets directory tree, but do not upload real files.
+!/user_assets/
+/user_assets/**
+!/user_assets/**/
+!/user_assets/.gitkeep
+!/user_assets/**/.gitkeep
+
+# Extra safety: even if later unignored elsewhere, do not upload these.
+/tools/
+/tests/
+/build_env.sh
+/distillation/
+/utils/
+/analysis/
+/runs/
+/check_data/
+/tmp_local_non_dp_stack/
+/Dataset/
+/__pycache__/
+/AGENTS.md
+/README.md
+/WORKFLOW_GUIDE.md
+/SERVER_OPERATIONS_GUIDE.md
+/SERVER_WORKFLOW_COMMANDS.md
+/DEVELOPMENT_STRUCTURE_GUIDE.md
+/CODEX_WORKFLOW_HANDOFF_2026-04-03.md

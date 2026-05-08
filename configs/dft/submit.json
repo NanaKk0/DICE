@@ -1,0 +1,32 @@
+{
+  "enabled": true,
+  "labelling_style": "cp2k",
+  "command": null,
+  "source_list": [],
+  "cp2k_exec": null,
+  "cp2k_data_dir": null,
+  "basis_set_file": null,
+  "potential_file": null,
+  "force_use_mpirun": null,
+  "nproc_total": 1,
+  "nproc_single": 1,
+  "group_size": 1,
+  "kpoint_mode": "slab_xy",
+  "kspacing": 0.20,
+  "vacuum_axis": "c",
+  "kgrid": null,
+  "kpoint_symmetry": false,
+  "kpoint_parallel_group_size": null,
+  "gamma_real_wavefunctions": true,
+  "log_level": "medium",
+  "skip_finished": true,
+  "retry_failed": false,
+  "dry_run": false,
+  "required_outputs": [
+    "cp2k.out"
+  ],
+  "deduplicate": true,
+  "overwrite_existing": false,
+  "missing_cell_policy": "recover_or_fail",
+  "default_cell": null
+}

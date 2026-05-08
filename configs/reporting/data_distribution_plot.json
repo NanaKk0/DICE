@@ -1,0 +1,22 @@
+{
+  "enabled": false,
+  "feature_type": "geometric",
+  "use_pca": true,
+  "pca_dim": 32,
+  "normalize_mode": "per_plot",
+  "max_structures_per_group": 2000,
+  "random_state": 42,
+  "save_csv": true,
+  "save_embeddings": true,
+  "figure": {
+    "dpi": 160,
+    "figsize": [7.0, 6.0],
+    "point_size": 10,
+    "alpha_base": 0.35,
+    "alpha_new": 0.75
+  },
+  "colors": {
+    "base": "#7f8c8d",
+    "increment": "#d35400"
+  }
+}

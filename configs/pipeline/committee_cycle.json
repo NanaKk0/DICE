@@ -1,0 +1,16 @@
+﻿{
+  "mace_finetune": {
+    "config": "configs/mace/committee_finetune.json",
+    "reuse_existing_committee": false,
+    "training_data": {
+      "base_datasets": {
+        "include_physical": true,
+        "include_rgps": true
+      }
+    }
+  },
+  "dp_subworkflow": {
+    "config": "configs/dp/active_learning_subworkflow.json"
+  }
+}
+

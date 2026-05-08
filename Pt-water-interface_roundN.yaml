@@ -1,0 +1,16 @@
+﻿run_name: Pt-water-interface
+round: 0
+
+resume:
+  enabled: true
+  mode: auto
+  verify_success_markers: true
+  rerun_incomplete_step: true
+  backup_partial_outputs: true
+
+pipeline:
+  - committee_cycle
+
+committee_cycle:
+  config: configs/pipeline/committee_cycle.json
+

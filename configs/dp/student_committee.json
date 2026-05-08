@@ -1,0 +1,41 @@
+﻿{
+  "bootstrap_train_config": "configs/dp/committee_base.json",
+  "finetune_train_config": "configs/dp/committee_finetune_base.json",
+  "committee_size": 4,
+  "valid_fraction": 0.1,
+  "split_seed": 42,
+  "split_mode": "frame_within_system",
+  "model_seeds": [
+    101,
+    202,
+    505,
+    808
+  ],
+  "dp_command": [
+    "dp",
+    "train"
+  ],
+  "freeze_command": [
+    "dp",
+    "freeze",
+    "-o",
+    "graph.pb"
+  ],
+  "env": {
+    "DP_INTERFACE_PREC": "low",
+    "DP_INFER_BATCH_SIZE": "65536"
+  },
+  "reuse_existing_split": true,
+  "reuse_existing_model": true,
+  "max_retries_per_member": 1,
+  "retry_seed_stride": 1000,
+  "nan_watchdog": {
+    "enabled": true,
+    "terminate_timeout_seconds": 10,
+    "watch_lcurve_fallback": true,
+    "lcurve_poll_interval_seconds": 1.5,
+    "recommend_disp_freq": 100,
+    "recommend_save_freq_mode": "keep_existing"
+  }
+}
+

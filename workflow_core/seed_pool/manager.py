@@ -1,0 +1,10 @@
+from __future__ import annotations
+
+from workflow_core.seed_pool import service as _impl
+
+init_seed_pool = _impl.init_seed_pool
+collect_seed_candidates_from_md = _impl.collect_seed_candidates_from_md
+update_seed_pool = _impl.update_seed_pool
+select_md_seeds_from_pool = _impl.select_md_seeds_from_pool
+refresh_seed_pool_after_training = _impl.refresh_seed_pool_after_training
+record_seed_usage_after_sampling = _impl.record_seed_usage_after_sampling

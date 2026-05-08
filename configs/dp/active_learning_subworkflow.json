@@ -1,0 +1,126 @@
+﻿{
+  "max_dp_rounds": 4,
+  "stop_ratio_threshold": 0.1,
+  "resume": true,
+  "bootstrap_data": {
+    "include_rgps_in_initial_dataset": false
+  },
+  "incremental_data": {
+    "use_incremental_data_only": true
+  },
+  "training_policy": {
+    "round0_stage": "bootstrap",
+    "later_round_stage": "finetune"
+  },
+  "seed_pool_policy": {
+    "enabled": true,
+    "initialize_at_subworkflow_start": true,
+    "max_pool_size_per_system": 500,
+    "refresh_after_training": true
+  },
+  "sampling_seed_policy": {
+    "backend": "lammps",
+    "driver_policy": "round_robin",
+    "md": {
+      "timestep_fs": 1.0,
+      "eval_every": 20,
+      "log_every": 10,
+      "seed": 20260430,
+      "friction": 0.05,
+      "force_temp": true,
+      "zero_rotation": false
+    },
+    "lammps": {
+      "command": "auto",
+      "plugin_path": "auto",
+      "type_map": ["H", "O", "Pt"],
+      "ensemble": "nvt",
+      "thermo_freq": 10,
+      "dump_freq": 10,
+      "model_devi_freq": 10,
+      "f_trust_lo": 0.10,
+      "f_trust_hi": 0.40,
+      "rotate_driver_model": true,
+      "atomic_model_devi": false,
+      "thermostat_damp_fs": 100.0,
+      "device_policy": "gpu_shared_experimental",
+      "execution_backend": "grouped_shell",
+      "group_fail_fast": true
+    }
+  },
+  "sampling_schedule": {
+    "mode": "long_first_then_short",
+    "long_round_selector": "first_sampling_round_only",
+    "long_profile_name": "long_exploration",
+    "short_profile_name": "short_refinement"
+  },
+  "sampling_profiles": {
+    "long_exploration": {
+      "seed_selection": {
+        "n_seed_per_system": 1,
+        "selection_mode": "top_uncertainty_per_system"
+      },
+      "sampling": {
+        "temperature_schedule": [273, 323, 373],
+        "steps": 20000
+      },
+      "lammps": {
+        "max_parallel_tasks": 8,
+        "task_group_size": 3,
+        "max_parallel_groups": 8,
+        "group_parallel_degree": 1
+      },
+      "candidate_train_selection": {
+        "enabled": true,
+        "selection_mode": "random_per_system",
+        "max_train_candidates_per_system": 1000,
+        "random_seed": 20260502
+      },
+      "seed_pool": {
+        "refresh_mode": "merge_old_pool_with_current_candidate_failed",
+        "random_seed": 20260502
+      }
+    },
+    "short_refinement": {
+      "seed_selection": {
+        "n_seed_per_system": 15,
+        "selection_mode": "usage_then_uncertainty_per_system"
+      },
+      "sampling": {
+        "temperature_schedule": [273, 373],
+        "steps": 1000
+      },
+      "lammps": {
+        "max_parallel_tasks": 8,
+        "task_group_size": 2,
+        "max_parallel_groups": 8,
+        "group_parallel_degree": 1
+      },
+      "candidate_train_selection": {
+        "enabled": true,
+        "selection_mode": "random_per_system",
+        "max_train_candidates_per_system": 700,
+        "random_seed": 20260502
+      },
+      "seed_pool": {
+        "refresh_mode": "rescore_existing_pool_only",
+        "random_seed": 20260502
+      }
+    }
+  },
+  "dft_screening_policy": {
+    "enabled": true,
+    "selection_mode": "bucket_random_per_system",
+    "budget_per_system": 20,
+    "random_seed": 20260503,
+    "signature_neighbor_order": 3,
+    "signature_quantiles": [0.10, 0.50, 0.90],
+    "bucket_width": 4.0,
+    "keep_top_per_bucket": 1,
+    "stop_dp_round_when_current_screened_count_gte": 160,
+    "stop_dp_round_when_cumulative_screened_count_gte": 160
+  },
+  "train_dp_committee_config": "configs/dp/student_committee.json",
+  "label_config": "configs/label/label.json"
+}
+
