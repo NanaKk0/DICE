@@ -1,4 +1,6 @@
-# 环境依赖说明
+# DICE 环境依赖说明
+
+`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。它通过 `MACE / MACE-LES teacher committee` 将知识蒸馏给 `DeepMD student committee`，同时由 `DeepMD student committee` 通过采样探索新的结构分布，并将高价值结构反馈给教师模型继续学习。
 
 这份文档说明当前仓库运行所需要的环境能力。它不是一份一键安装脚本，用户也不需要完全照搬旧的 `build_env.sh`。本文档的目标是说明：
 

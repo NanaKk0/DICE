@@ -1,4 +1,6 @@
-# Current Workflow User Manual
+# DICE 用户使用手册
+
+`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。它通过 `MACE / MACE-LES teacher committee` 将知识蒸馏给 `DeepMD student committee`，同时由 `DeepMD student committee` 通过采样探索新的结构分布，并将高价值结构反馈给教师模型继续学习。
 
 ## 0. 标准启动方式
 

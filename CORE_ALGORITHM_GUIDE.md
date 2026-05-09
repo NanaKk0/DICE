@@ -1,4 +1,6 @@
-# 项目核心算法文档
+# DICE 核心算法文档
+
+`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。它通过 `MACE / MACE-LES teacher committee` 将知识蒸馏给 `DeepMD student committee`，同时由 `DeepMD student committee` 通过采样探索新的结构分布，并将高价值结构反馈给教师模型继续学习。
 
 这份文档说明当前正式工作流的核心算法设计。它不讨论服务器操作、日志查看、同步命令等使用细节，只说明当前主线在做什么，以及各个阶段之间如何衔接。
 

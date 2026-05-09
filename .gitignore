@@ -8,6 +8,7 @@
 !/workflow.py
 !/server_start_workflow.sh
 !/Pt-water-interface_roundN.yaml
+!/README.md
 !/USER_MANUAL.md
 !/CORE_ALGORITHM_GUIDE.md
 !/ENVIRONMENT_REQUIREMENTS.md
@@ -46,7 +47,6 @@
 /Dataset/
 /__pycache__/
 /AGENTS.md
-/README.md
 /WORKFLOW_GUIDE.md
 /SERVER_OPERATIONS_GUIDE.md
 /SERVER_WORKFLOW_COMMANDS.md
