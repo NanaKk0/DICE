@@ -1,22 +1,27 @@
-# split_dft_xyz.py
+"""Import-safe compatibility CLI for splitting legacy DFT extxyz inputs.
 
-from ase.io import read, write
-from pathlib import Path
+The canonical implementation lives in `workflow_artifacts.first_principles.split`.
+This module keeps the old import path and script behavior without doing work at
+import time.
+"""
+
+from __future__ import annotations
+
 import sys
+from collections.abc import Sequence
 
-xyz = sys.argv[1]
-out_dir = Path(sys.argv[2])
+from workflow_artifacts.first_principles.split import split_dft_xyz
 
-atoms_list = read(xyz, ":")
 
-out_dir.mkdir(parents=True, exist_ok=True)
+def main(argv: Sequence[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) != 2:
+        print("Usage: python -m workflow_artifacts.dft_split <input.xyz> <out_dir>", file=sys.stderr)
+        return 2
+    result = split_dft_xyz(args[0], args[1])
+    print("Total structures:", result["structure_count"])
+    return 0
 
-for i, atoms in enumerate(atoms_list):
 
-    d = out_dir / str(i)
-
-    d.mkdir(exist_ok=True)
-
-    write(d / "structure.xyz", atoms)
-
-print("Total structures:", len(atoms_list))
+if __name__ == "__main__":
+    raise SystemExit(main())

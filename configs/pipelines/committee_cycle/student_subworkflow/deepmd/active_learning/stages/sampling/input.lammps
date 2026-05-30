@@ -1,0 +1,16 @@
+units           metal
+atom_style      atomic
+boundary        p p p
+log             log.lammps
+
+# DICE_BEGIN_MODEL_DEVI
+# DICE_END_MODEL_DEVI
+
+neighbor        2.000000 bin
+neigh_modify    delay 0 every 1 check yes
+velocity        all create 300.000000 20260430 mom yes rot yes dist gaussian
+fix             1 all nvt temp 300.000000 300.000000 0.100000
+timestep        0.001000
+thermo          10
+thermo_style    custom step temp pe ke etotal press
+run             20000

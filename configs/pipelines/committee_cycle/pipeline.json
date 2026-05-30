@@ -1,0 +1,10 @@
+﻿{
+  "teacher_committee_finetune": {
+    "teacher_backend": "mace",
+    "config": "configs/pipelines/committee_cycle/teacher_committee_finetune/mace/committee_finetune.json",
+    "reuse_existing_committee": true
+  },
+  "student_subworkflow": {
+    "config": "configs/pipelines/committee_cycle/student_subworkflow/deepmd/active_learning/subworkflow.json"
+  }
+}

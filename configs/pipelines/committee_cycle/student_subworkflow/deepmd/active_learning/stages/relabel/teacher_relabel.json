@@ -1,0 +1,14 @@
+{
+  "teacher_backend_options": {
+    "model_family": "les",
+    "device": "cuda"
+  },
+  "split_seed": 42,
+  "teacher_trust_lo": 0.10,
+  "max_force": 15.0,
+  "valid_fraction": 0.1,
+  "element_order": ["H", "O", "Pt"],
+  "failed_backflow": {
+    "enabled": false
+  }
+}

@@ -145,6 +145,8 @@ def write_sampling_summary_fast(
         "candidate_count": int(candidate_count),
         "failed_uncertainty_count": int(failed_uncertainty_count),
         "selected_count": int(selected_count),
+        "selected_xyz": str(Path(selected_xyz).resolve()),
+        "candidate_xyz": str(Path(selected_xyz).resolve()),
         "effective_sample_count": effective_sample_count,
         "high_unc_count": int(high_unc_count),
         "high_unc_ratio": float(high_unc_count / effective_sample_count) if effective_sample_count else 0.0,

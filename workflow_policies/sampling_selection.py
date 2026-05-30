@@ -4,7 +4,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from workflow_backends.deepmd.online_monitor import compute_rmsd
+from workflow_core.structures.geometry import compute_rmsd
 
 
 def _quantile(sorted_values, q):

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterable
+from hashlib import sha1
 
 import numpy as np
 from ase import Atoms
@@ -8,21 +10,146 @@ from ase.io import read, write
 
 
 def read_extxyz_frame(path: str | Path, *, index: int = 0) -> Atoms:
-    return read(str(Path(path).resolve()), index=index)
+    return read_extxyz_structures(path, allow_empty=False)[index]
 
 
-def read_extxyz_structures(path: str | Path) -> list[Atoms]:
-    return list(read(str(Path(path).resolve()), index=":"))
+def read_extxyz_structures(path: str | Path, *, allow_empty: bool = False) -> list[Atoms]:
+    input_path = Path(path).resolve()
+    if not input_path.exists() or not input_path.is_file():
+        raise ValueError(f"missing extxyz file: {input_path}")
+    if input_path.stat().st_size == 0:
+        if allow_empty:
+            return []
+        raise ValueError(f"empty extxyz is not allowed: {input_path}")
+    try:
+        frames = list(read(str(input_path), index=":"))
+    except Exception as exc:
+        raise ValueError(f"invalid extxyz file: {input_path}") from exc
+    if not frames and not allow_empty:
+        raise ValueError(f"empty extxyz is not allowed: {input_path}")
+    return frames
 
 
-def write_extxyz_structures(path: str | Path, atoms_list: list[Atoms]) -> Path:
+def write_extxyz_structures(path: str | Path, atoms_list: Iterable[Atoms], *, allow_empty: bool = True) -> Path:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    if not atoms_list:
+    frames = list(atoms_list)
+    if not frames:
+        if not allow_empty:
+            raise ValueError(f"empty extxyz is not allowed: {output}")
         output.write_text("", encoding="utf-8")
         return output
-    write(output, atoms_list, format="extxyz")
+    write(output, frames, format="extxyz")
     return output
+
+
+def concat_extxyz_files(
+    sources: Iterable[str | Path],
+    target: str | Path,
+    *,
+    allow_empty_sources: bool = True,
+    allow_empty_output: bool = True,
+) -> Path:
+    frames: list[Atoms] = []
+    for source in sources:
+        source_path = Path(source)
+        frames.extend(read_extxyz_structures(source_path, allow_empty=allow_empty_sources))
+    return write_extxyz_structures(target, frames, allow_empty=allow_empty_output)
+
+
+def copy_extxyz_file(
+    source: str | Path,
+    target: str | Path,
+    *,
+    allow_empty: bool = True,
+) -> Path:
+    frames = read_extxyz_structures(source, allow_empty=allow_empty)
+    return write_extxyz_structures(target, frames, allow_empty=allow_empty)
+
+
+def validate_extxyz_file(path: str | Path, *, allow_empty: bool = False) -> bool:
+    try:
+        read_extxyz_structures(path, allow_empty=allow_empty)
+    except ValueError:
+        return False
+    return True
+
+
+def annotate_canonical_structure(
+    atoms: Atoms,
+    *,
+    force_std_max: float | None = None,
+    route: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> Atoms:
+    item = atoms.copy()
+    info = item.info or {}
+    system_id = str(info.get("system_id") or info.get("seed_system_id") or item.get_chemical_formula(mode="hill"))
+    structure_id = str(info.get("structure_id") or info.get("seed_structure_id") or _structure_hash(item))
+    times_used = int(info.get("times_used", info.get("seed_use_count", 0)) or 0)
+    item.info["system_id"] = system_id
+    item.info["seed_system_id"] = system_id
+    item.info["structure_id"] = structure_id
+    item.info["seed_structure_id"] = structure_id
+    item.info["times_used"] = max(0, times_used)
+    item.info["seed_use_count"] = max(0, times_used)
+    item.info.setdefault("force_std_max", float(info.get("force_std_max", info.get("decision_metric", 0.0)) or 0.0))
+    if force_std_max is not None:
+        item.info["force_std_max"] = float(force_std_max)
+        item.info["student_uncertainty"] = float(force_std_max)
+    if route is not None:
+        item.info["route"] = str(route)
+    for key, value in dict(metadata or {}).items():
+        item.info[str(key)] = value
+    return item
+
+
+def active_extxyz_to_canonical_structures(
+    active_xyz_path: str | Path,
+    *,
+    force_std_values: list[float] | None = None,
+    routes: list[str] | None = None,
+    metadata: dict[str, object] | None = None,
+) -> list[Atoms]:
+    frames = read_extxyz_structures(active_xyz_path, allow_empty=True)
+    result: list[Atoms] = []
+    for index, atoms in enumerate(frames):
+        force_std_max = None if force_std_values is None or index >= len(force_std_values) else force_std_values[index]
+        route = None if routes is None or index >= len(routes) else routes[index]
+        result.append(
+            annotate_canonical_structure(
+                atoms,
+                force_std_max=force_std_max,
+                route=route,
+                metadata=metadata,
+            )
+        )
+    return result
+
+
+def active_extxyz_to_canonical_extxyz(
+    active_xyz_path: str | Path,
+    output_path: str | Path,
+    *,
+    force_std_values: list[float] | None = None,
+    routes: list[str] | None = None,
+    metadata: dict[str, object] | None = None,
+) -> Path:
+    frames = active_extxyz_to_canonical_structures(
+        active_xyz_path,
+        force_std_values=force_std_values,
+        routes=routes,
+        metadata=metadata,
+    )
+    return write_extxyz_structures(output_path, frames, allow_empty=True).resolve()
+
+
+def _structure_hash(atoms: Atoms) -> str:
+    positions = getattr(atoms, "positions", None)
+    if positions is None:
+        return "frame_unknown"
+    payload = str(positions).encode("utf-8", errors="ignore")
+    return f"frame_{sha1(payload).hexdigest()[:16]}"
 
 
 def atoms_to_lammps_data(atoms: Atoms, output: str | Path, *, type_map: list[str]) -> Path:

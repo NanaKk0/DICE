@@ -1,0 +1,6 @@
+{
+  "stages": [
+    {"stage": "relabel", "config": "../stages/relabel/entry_teacher_relabel.json"},
+    {"stage": "train", "config": "../stages/train/entry_train.json"}
+  ]
+}

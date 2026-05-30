@@ -1,0 +1,57 @@
+{
+  "workflow": {
+    "model_family": "dpa4",
+    "type_map": [
+      "H",
+      "O",
+      "Pt"
+    ],
+    "training_data": {
+      "base_datasets": [
+        "base.xyz"
+      ]
+    },
+    "valid_fraction": 0.1,
+    "split_seed": 42,
+    "seed": 101
+  },
+  "deepmd": {
+    "model": {
+      "type": "dpa4",
+      "type_map": [],
+      "descriptor": {
+        "type": "dpa4",
+        "sel": 120,
+        "rcut": 6.0,
+        "seed": 0
+      },
+      "fitting_net": {
+        "type": "dpa4_ener",
+        "neuron": [
+          0
+        ],
+        "seed": 0
+      }
+    },
+    "loss": {
+      "type": "ener"
+    },
+    "training": {
+      "training_data": {
+        "systems": []
+      },
+      "validation_data": {
+        "systems": []
+      },
+      "seed": 0,
+      "numb_steps": 1000000
+    },
+    "execution": {
+      "max_retries_per_member": 0,
+      "retry_seed_stride": 1000,
+      "nan_watchdog": {
+        "enabled": true
+      }
+    }
+  }
+}

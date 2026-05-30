@@ -1,0 +1,1 @@
+"""Teacher artifact compatibility facades."""

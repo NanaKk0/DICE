@@ -1,0 +1,20 @@
+{
+  "native_recipe_ref": "gpumd_run.in",
+  "seed_selection": {
+    "n_seed_per_system": 1,
+    "selection_mode": "top_uncertainty_per_system",
+    "random_seed": 20260509
+  },
+  "md": {
+    "temperature_schedule": [273, 373],
+    "steps": 500,
+    "active_interval": 10,
+    "dump_interval": 10,
+    "seed": 20260509
+  },
+  "execution": {
+    "max_parallel_tasks": 1,
+    "task_group_size": 1,
+    "group_fail_fast": true
+  }
+}

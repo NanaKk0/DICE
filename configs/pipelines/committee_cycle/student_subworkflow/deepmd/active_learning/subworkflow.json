@@ -1,0 +1,62 @@
+{
+  "student_backend": "deepmd",
+  "sampling_backend": "lammps",
+  "train_regime": {
+    "use_foundation_model": false,
+    "continue_training": true
+  },
+  "initial_student_inputs": [
+    "bootstrap.xyz"
+  ],
+  "source": {
+    "initial_seed_pool": [
+      "initial_physical_seed.xyz"
+    ]
+  },
+  "student_model": {
+    "type_map": ["H", "O", "Pt"],
+    "committee_size": 4
+  },
+  "deepmd": {
+    "training": {
+      "valid_fraction": 0.1,
+      "split_seed": 42,
+      "model_seeds": [
+        101,
+        202,
+        505,
+        808
+      ],
+      "reuse_existing_split": true,
+      "reuse_existing_model": true,
+      "max_retries_per_member": 1,
+      "retry_seed_stride": 1000,
+      "nan_watchdog": {
+        "enabled": true
+      }
+    }
+  },
+  "sampling_backend_config": {
+    "lammps": {
+      "rotate_driver_model": true,
+      "atomic_model_devi": false,
+      "device_policy": "gpu_shared_experimental",
+      "execution_backend": "grouped_shell"
+    }
+  },
+  "uncertainty": {
+    "metric": "force_std_max",
+    "trust_lo": 0.10,
+    "trust_hi": 0.40
+  },
+  "student_pipeline_templates": {
+    "entry": "templates/entry.json",
+    "long_cycle": "templates/long_cycle.json",
+    "short_cycle": "templates/short_cycle.json"
+  },
+  "student_pipeline_schedule": [
+    {"template": "entry", "repeat": 1},
+    {"template": "long_cycle", "repeat": 1},
+    {"template": "short_cycle", "repeat": 3}
+  ]
+}

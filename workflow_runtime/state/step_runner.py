@@ -5,8 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from workflow_runtime.state.run_state import RunStateManager
-
 
 def _timestamp() -> str:
     return datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -22,7 +20,7 @@ def backup_partial_output(output_dir: str | Path, status: str) -> Path | None:
     return target
 
 
-def execute_step(step: dict[str, Any], state_mgr: RunStateManager) -> Any:
+def execute_step(step: dict[str, Any], state_mgr: Any) -> Any:
     step_id = str(step["id"])
     record = state_mgr.get_step_record(step_id)
     previous_status = record.get("status")

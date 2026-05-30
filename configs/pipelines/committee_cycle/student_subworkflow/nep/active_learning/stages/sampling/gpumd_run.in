@@ -1,0 +1,6 @@
+# DICE_BEGIN_GPUMD_ACTIVE_LEARNING
+# DICE_END_GPUMD_ACTIVE_LEARNING
+time_step    1.0
+velocity     300
+ensemble     nvt_ber 300 300 100
+run          20000

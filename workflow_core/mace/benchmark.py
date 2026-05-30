@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from workflow_core.mace.backend import print_backend_banner, resolve_mace_backend
-from workflow_core.mace.env import ensure_backend_environment, probe_mace_environment
+from workflow_backends.teacher.mace.env import ensure_backend_environment, probe_mace_environment
 from workflow_core.mace.model_check import infer_mace_backend
 from workflow_core.common.io import read_json
 
@@ -17,7 +17,7 @@ def run_task(cfg, paths, round_id: int) -> None:
 
     model_root = cfg.get("model_root")
     if model_root is None:
-        model_root = paths.mace_model_dir()
+        model_root = paths.teacher_foundation_train_artifacts_dir(round_id)
 
     backend = resolve_mace_backend(
         cfg.get("mace_backend"),

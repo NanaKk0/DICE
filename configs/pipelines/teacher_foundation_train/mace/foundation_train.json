@@ -1,0 +1,48 @@
+{
+  "workflow": {
+    "model_family": "les",
+    "training_data": {
+      "base_datasets": [
+        "base.xyz"
+      ]
+    }
+  },
+  "mace": {
+    "valid_fraction": 0.05,
+    "default_dtype": "float32",
+    "num_interactions": 2,
+    "num_channels": 64,
+    "max_L": 1,
+    "correlation": 2,
+    "r_max": 7.0,
+    "loss": "stress",
+    "energy_key": "energy",
+    "forces_key": "forces",
+    "stress_key": "stress",
+    "energy_weight": 10,
+    "forces_weight": 100,
+    "stress_weight": 10,
+    "swa_energy_weight": 1000,
+    "swa_forces_weight": 100,
+    "swa_stress_weight": 10,
+    "E0s": "average",
+    "batch_size": 8,
+    "valid_batch_size": 4,
+    "max_num_epochs": 96,
+    "lr": 0.0003,
+    "swa_lr": 0.0001,
+    "weight_decay": 5e-07,
+    "ema": true,
+    "swa": true,
+    "start_swa": 80,
+    "scheduler_patience": 5,
+    "patience": 10,
+    "eval_interval": 4,
+    "error_table": "PerAtomRMSEstressvirials",
+    "restart_latest": true,
+    "plot": false,
+    "plot_frequency": 0,
+    "device": "cuda",
+    "save_cpu": true
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "selection_mode": "top_uncertainty_per_system",
+  "max_pool_size_per_system": 500,
+  "keep_if_lt_high": 0.40,
+  "dedup_enabled": true,
+  "reset_times_used": false,
+  "random_seed": 20260509
+}

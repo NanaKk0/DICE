@@ -1,0 +1,57 @@
+{
+  "student_backend": "nep",
+  "sampling_backend": "gpumd",
+  "train_regime": {
+    "use_foundation_model": true,
+    "continue_training": false
+  },
+  "initial_student_inputs": [
+    "bootstrap.xyz"
+  ],
+  "source": {
+    "initial_seed_pool": [
+      "initial_physical_seed.xyz"
+    ]
+  },
+  "student_foundation_asset": {
+    "nep": {
+      "model_path": "/mnt/c/Users/1/Desktop/mlff_workflow/software/gpumd-nep/GPUMD/potentials/nep/nep89_20250409/nep89_20250409.txt",
+      "restart_path": "/mnt/c/Users/1/Desktop/mlff_workflow/software/gpumd-nep/GPUMD/potentials/nep/nep89_20250409/nep89_20250409.restart",
+      "arch_policy": "require_exact",
+      "arch": {
+        "version": 4,
+        "zbl": 2.0,
+        "cutoff": {"radial": 6.0, "angular": 5.0},
+        "n_max": {"radial": 4, "angular": 4},
+        "basis_size": {"radial": 8, "angular": 8},
+        "l_max": [4, 2, 1],
+        "neuron": 80
+      }
+    }
+  },
+  "student_model": {
+    "type_map": ["H", "O", "Pt"],
+    "committee_size": 4
+  },
+  "nep": {
+    "split_seed": 42
+  },
+  "sampling_backend_config": {
+    "gpumd": {}
+  },
+  "uncertainty": {
+    "metric": "force_std_max",
+    "trust_lo": 0.10,
+    "trust_hi": 0.40
+  },
+  "student_pipeline_templates": {
+    "entry": "templates/entry.json",
+    "long_cycle": "templates/long_cycle.json",
+    "short_cycle": "templates/short_cycle.json"
+  },
+  "student_pipeline_schedule": [
+    {"template": "entry", "repeat": 1},
+    {"template": "long_cycle", "repeat": 1},
+    {"template": "short_cycle", "repeat": 3}
+  ]
+}

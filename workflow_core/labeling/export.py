@@ -1,6 +1,7 @@
 ﻿from pathlib import Path
 
 import numpy as np
+from ase.calculators.singlepoint import SinglePointCalculator
 
 from workflow_core.structures.formats import write_extxyz_structures
 from workflow_core.structures.validation import (
@@ -55,7 +56,16 @@ def sort_atoms(atoms):
     new_atoms = atoms[order]
 
     if atoms.calc is not None:
-        new_atoms.calc = atoms.calc
+        results = getattr(atoms.calc, "results", {}) or {}
+        calc_payload = {}
+        if "energy" in results:
+            calc_payload["energy"] = results["energy"]
+        if "forces" in results:
+            calc_payload["forces"] = np.asarray(results["forces"], dtype=float)[order]
+        if "stress" in results:
+            calc_payload["stress"] = results["stress"]
+        if calc_payload:
+            new_atoms.calc = SinglePointCalculator(new_atoms, **calc_payload)
 
     return new_atoms
 
@@ -145,6 +155,7 @@ def export_label_results(outputs, export_cfg):
     labeled_output_dir = Path(export_cfg["labeled_output_dir"])
     active_learning_output_dir = Path(export_cfg["active_learning_output_dir"])
     element_order = export_cfg["element_order"]
+    write_deepmd_dataset = bool(export_cfg.get("write_deepmd_dataset", True))
 
     labeled_output_dir.mkdir(parents=True, exist_ok=True)
     active_learning_output_dir.mkdir(parents=True, exist_ok=True)
@@ -153,6 +164,10 @@ def export_label_results(outputs, export_cfg):
     write_extxyz_structures(active_learning_output_dir / "dft.xyz", outputs.dft_structures)
     write_extxyz_structures(labeled_output_dir / "discard.xyz", outputs.discard_structures)
     write_extxyz_structures(labeled_output_dir / "train.xyz", outputs.train_structures)
+
+    if not write_deepmd_dataset:
+        print("Skip DeepMD dataset export for non-DeepMD student backend")
+        return
 
     for composition_name, datasets in outputs.grouped_train_val.items():
         train_set, val_set = datasets

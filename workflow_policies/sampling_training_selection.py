@@ -17,8 +17,8 @@ def select_training_candidates_by_system(
     max_train_candidates_per_system: int,
     selection_mode: str,
     random_seed: int,
-    outer_round: int,
-    dp_round: int,
+    teacher_round: int,
+    student_round: int,
 ) -> list[dict]:
     grouped: dict[str, list[dict]] = {}
     for record in candidate_records:
@@ -31,7 +31,7 @@ def select_training_candidates_by_system(
         records = list(grouped[system_id])
         limit = max(0, int(max_train_candidates_per_system))
         if str(selection_mode).strip().lower() == "random_per_system":
-            seed = _stable_random_seed("candidate_train", outer_round, dp_round, system_id, base_seed=random_seed)
+            seed = _stable_random_seed("candidate_train", teacher_round, student_round, system_id, base_seed=random_seed)
             rng = np.random.default_rng(seed)
             if len(records) > 1:
                 rng.shuffle(records)

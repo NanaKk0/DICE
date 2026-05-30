@@ -1,0 +1,21 @@
+{
+  "native_recipe_ref": "input.lammps",
+  "seed_selection": {
+    "n_seed_per_system": 15,
+    "selection_mode": "usage_then_uncertainty_per_system"
+  },
+  "md": {
+    "temperature_schedule": [273, 373],
+    "steps": 1000,
+    "model_devi_interval": 20,
+    "dump_interval": 20,
+    "seed": 20260430
+  },
+  "execution": {
+    "max_parallel_tasks": 8,
+    "task_group_size": 2,
+    "max_parallel_groups": 8,
+    "group_parallel_degree": 1,
+    "group_fail_fast": true
+  }
+}

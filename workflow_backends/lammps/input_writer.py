@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from ase.data import atomic_masses, atomic_numbers
+
+LAMMPS_MODEL_DEVI_BLOCK_BEGIN = "# DICE_BEGIN_MODEL_DEVI"
+LAMMPS_MODEL_DEVI_BLOCK_END = "# DICE_END_MODEL_DEVI"
 
 
 def rotate_models(models: list[str | Path], task_index: int, enabled: bool) -> list[Path]:
@@ -50,68 +51,12 @@ def build_lammps_env(lammps_cfg: dict[str, Any]) -> dict[str, str]:
 
 
 def find_lammps_command(lammps_cfg: dict[str, Any]) -> str:
-    command = str(lammps_cfg.get("command", "auto")).strip()
-    if command and command.lower() != "auto":
-        candidate = Path(command)
-        if candidate.exists():
-            return str(candidate.resolve())
-        resolved = shutil.which(command)
-        if resolved:
-            return resolved
-        raise FileNotFoundError(f"LAMMPS command not found: {command}")
-
-    resolved = shutil.which("lmp")
-    if resolved:
-        return resolved
-    raise FileNotFoundError("Unable to find LAMMPS executable 'lmp' in PATH")
-
-
-def _lammps_supports_deepmd(lammps_cmd: str, env: dict[str, str]) -> bool:
-    try:
-        proc = subprocess.run(
-            [lammps_cmd, "-h"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=env,
-            timeout=30,
-            check=False,
-        )
-    except Exception:
-        return False
-    text = str(proc.stdout or "").lower()
-    return "deepmd" in text
-
-
-def find_deepmd_plugin(lammps_cfg: dict[str, Any], *, lammps_cmd: str, env: dict[str, str]) -> Path | None:
-    plugin_path = str(lammps_cfg.get("plugin_path", "auto")).strip()
-    if plugin_path and plugin_path.lower() != "auto":
-        resolved = Path(plugin_path).expanduser().resolve()
-        if not resolved.exists():
-            raise FileNotFoundError(f"DeePMD LAMMPS plugin not found: {resolved}")
-        return resolved
-
-    if _lammps_supports_deepmd(lammps_cmd, env):
-        return None
-
-    conda_prefix = env.get("CONDA_PREFIX") or os.environ.get("CONDA_PREFIX")
-    if conda_prefix:
-        candidates = [
-            Path(conda_prefix) / "lib" / "libdeepmd_lmp.so",
-            Path(conda_prefix) / "lib" / "deepmd_lmp" / "libdeepmd_lmp.so",
-            Path(conda_prefix) / "lib" / "deepmd_lmp" / "dpplugin.so",
-        ]
-        candidates.extend(
-            sorted((Path(conda_prefix) / "lib").glob("python*/site-packages/deepmd/lib/libdeepmd_lmpplugin.so"))
-        )
-        candidates.extend(sorted((Path(conda_prefix) / "lib").glob("deepmd_lmp/*.so")))
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate.resolve()
-
-    raise FileNotFoundError(
-        "Unable to locate libdeepmd_lmp.so automatically. Set sampling_seed_policy.lammps.plugin_path explicitly."
-    )
+    command = lammps_cfg.get("command")
+    if command in (None, ""):
+        raise KeyError("LAMMPS sampling requires executable 'lmp' from the script-first environment profile")
+    if isinstance(command, list) and all(isinstance(item, str) for item in command):
+        return list(command)
+    return [str(command)]
 
 
 def _mass_line(atom_type: int, symbol: str) -> str:
@@ -125,7 +70,6 @@ def write_lammps_deepmd_input(
     *,
     model_paths: list[str | Path],
     type_map: list[str],
-    plugin_path: str | Path | None,
     nsteps: int,
     timestep_fs: float,
     temperature: float,
@@ -139,6 +83,9 @@ def write_lammps_deepmd_input(
     seed: int,
     traj_filename: str = "traj.lammpstrj",
     log_filename: str = "log.lammps",
+    template_path: str | Path | None = None,
+    temperature_override_declared: bool = False,
+    steps_override_declared: bool = False,
 ) -> Path:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -154,22 +101,36 @@ def write_lammps_deepmd_input(
     if atomic_model_devi:
         pair_style += " atomic"
 
-    lines = []
-    if plugin_path is not None:
-        lines.append(f"plugin load {Path(plugin_path).resolve()}")
-        lines.append("")
-
-    lines.extend(
-        [
-            "units           metal",
-            "atom_style      atomic",
-            "boundary        p p p",
-            f"log             {log_filename}",
-            "",
+    if template_path is not None:
+        managed_lines = [
             "read_data       conf.lmp",
-            "",
+            *[_mass_line(atom_type, symbol) for atom_type, symbol in enumerate(type_map, start=1)],
+            pair_style,
+            f"pair_coeff      * * {' '.join(type_map)}",
+            f"dump            1 all custom {int(dump_freq)} {traj_filename} id type x y z fx fy fz",
+            "dump_modify     1 sort id",
         ]
-    )
+        return render_lammps_model_devi_template(
+            template_path,
+            output,
+            managed_lines=managed_lines,
+            temperature=float(temperature),
+            steps=int(nsteps),
+            seed=int(seed),
+            thermostat_damp_ps=float(tdamp_ps),
+            temperature_override_declared=bool(temperature_override_declared),
+            steps_override_declared=bool(steps_override_declared),
+        )
+
+    lines = [
+        "units           metal",
+        "atom_style      atomic",
+        "boundary        p p p",
+        f"log             {log_filename}",
+        "",
+        "read_data       conf.lmp",
+        "",
+    ]
     for atom_type, symbol in enumerate(type_map, start=1):
         lines.append(_mass_line(atom_type, symbol))
     lines.extend(
@@ -215,3 +176,205 @@ def write_lammps_deepmd_input(
 
     output.write_text("\n".join(lines), encoding="utf-8")
     return output
+
+
+def render_lammps_model_devi_template(
+    template_path: str | Path,
+    output_path: str | Path,
+    *,
+    managed_lines: list[str],
+    temperature: float | None = None,
+    steps: int | None = None,
+    seed: int | None = None,
+    thermostat_damp_ps: float | None = None,
+    temperature_override_declared: bool = False,
+    steps_override_declared: bool = False,
+) -> Path:
+    template = Path(template_path).resolve()
+    if not template.is_file():
+        raise FileNotFoundError(f"LAMMPS input template not found: {template}")
+    text = template.read_text(encoding="utf-8")
+    begin_count = text.count(LAMMPS_MODEL_DEVI_BLOCK_BEGIN)
+    end_count = text.count(LAMMPS_MODEL_DEVI_BLOCK_END)
+    if begin_count != 1 or end_count != 1:
+        raise ValueError(
+            "LAMMPS input template requires exactly one DICE-managed model-deviation block "
+            f"delimited by {LAMMPS_MODEL_DEVI_BLOCK_BEGIN!r} and {LAMMPS_MODEL_DEVI_BLOCK_END!r}: {template}"
+        )
+    before, remainder = text.split(LAMMPS_MODEL_DEVI_BLOCK_BEGIN, 1)
+    _, after = remainder.split(LAMMPS_MODEL_DEVI_BLOCK_END, 1)
+    rendered = (
+        before.rstrip()
+        + "\n"
+        + LAMMPS_MODEL_DEVI_BLOCK_BEGIN
+        + "\n"
+        + "\n".join(managed_lines)
+        + "\n"
+        + LAMMPS_MODEL_DEVI_BLOCK_END
+        + after
+    )
+    rendered = patch_lammps_sampling_scalars(
+        rendered,
+        temperature=temperature,
+        steps=steps,
+        seed=seed,
+        thermostat_damp_ps=thermostat_damp_ps,
+        temperature_override_declared=temperature_override_declared,
+        steps_override_declared=steps_override_declared,
+    )
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered if rendered.endswith("\n") else rendered + "\n", encoding="utf-8")
+    return output.resolve()
+
+
+def patch_lammps_sampling_scalars(
+    text: str,
+    *,
+    temperature: float | None,
+    steps: int | None,
+    seed: int | None,
+    thermostat_damp_ps: float | None,
+    temperature_override_declared: bool,
+    steps_override_declared: bool,
+) -> str:
+    if not temperature_override_declared and not steps_override_declared:
+        return text
+
+    lines = text.splitlines()
+    if temperature_override_declared:
+        if temperature is None:
+            raise ValueError("LAMMPS sampling temperature override requires a task temperature")
+        lines = _patch_lammps_temperature_lines(
+            lines,
+            temperature=float(temperature),
+            seed=int(seed or 20260319),
+            thermostat_damp_ps=float(thermostat_damp_ps if thermostat_damp_ps is not None else 0.1),
+        )
+    if steps_override_declared:
+        if steps is None:
+            raise ValueError("LAMMPS sampling steps override requires task steps")
+        lines = _patch_lammps_run_line(lines, steps=int(steps))
+    return "\n".join(lines)
+
+
+def _patch_lammps_run_line(lines: list[str], *, steps: int) -> list[str]:
+    run_indices = [
+        index
+        for index, line in enumerate(lines)
+        if _lammps_code_tokens(line) and _lammps_code_tokens(line)[0].lower() == "run"
+    ]
+    if len(run_indices) > 1:
+        raise ValueError("ambiguous LAMMPS sampling steps override: template contains multiple run commands")
+    if not run_indices:
+        return [*lines, f"run {int(steps)}"]
+
+    index = run_indices[0]
+    tokens = _lammps_code_tokens(lines[index])
+    if len(tokens) < 2 or not _looks_numeric(tokens[1]):
+        raise ValueError(f"unsupported LAMMPS sampling steps override form: {lines[index].strip()}")
+    tokens[1] = str(int(steps))
+    updated = list(lines)
+    updated[index] = _replace_lammps_code_tokens(lines[index], tokens)
+    return updated
+
+
+def _patch_lammps_temperature_lines(
+    lines: list[str],
+    *,
+    temperature: float,
+    seed: int,
+    thermostat_damp_ps: float,
+) -> list[str]:
+    velocity_indices = []
+    nvt_indices = []
+    unsupported_temperature_lines = []
+    for index, line in enumerate(lines):
+        tokens = _lammps_code_tokens(line)
+        lower = [item.lower() for item in tokens]
+        if len(lower) >= 4 and lower[0] == "velocity" and lower[2] == "create":
+            velocity_indices.append(index)
+            if not _looks_numeric(tokens[3]):
+                unsupported_temperature_lines.append(line)
+        elif lower[:1] == ["fix"] and len(lower) >= 4 and lower[3] == "langevin":
+            unsupported_temperature_lines.append(line)
+        elif "temp" in lower and lower[:1] == ["fix"]:
+            if len(lower) >= 6 and lower[3] == "nvt" and lower[4] == "temp":
+                nvt_indices.append(index)
+                if not _looks_numeric(tokens[5]) or len(tokens) < 7 or not _looks_numeric(tokens[6]):
+                    unsupported_temperature_lines.append(line)
+            else:
+                unsupported_temperature_lines.append(line)
+
+    if len(velocity_indices) > 1:
+        raise ValueError("ambiguous LAMMPS sampling temperature override: template contains multiple velocity create commands")
+    if len(nvt_indices) > 1:
+        raise ValueError("ambiguous LAMMPS sampling temperature override: template contains multiple fix nvt temp commands")
+    if unsupported_temperature_lines:
+        examples = "; ".join(item.strip() for item in unsupported_temperature_lines[:3])
+        raise ValueError(f"unsupported LAMMPS sampling temperature override form: {examples}")
+
+    updated = list(lines)
+    if velocity_indices:
+        index = velocity_indices[0]
+        tokens = _lammps_code_tokens(updated[index])
+        tokens[3] = _format_lammps_number(temperature)
+        if len(tokens) >= 5 and _looks_numeric(tokens[4]):
+            tokens[4] = str(int(seed))
+        updated[index] = _replace_lammps_code_tokens(updated[index], tokens)
+    else:
+        updated = _insert_before_first_lammps_run(
+            updated,
+            f"velocity all create {_format_lammps_number(temperature)} {int(seed)} mom yes rot yes dist gaussian",
+        )
+
+    if nvt_indices:
+        index = nvt_indices[0]
+        tokens = _lammps_code_tokens(updated[index])
+        tokens[5] = _format_lammps_number(temperature)
+        tokens[6] = _format_lammps_number(temperature)
+        updated[index] = _replace_lammps_code_tokens(updated[index], tokens)
+    else:
+        updated = _insert_before_first_lammps_run(
+            updated,
+            f"fix 1 all nvt temp {_format_lammps_number(temperature)} {_format_lammps_number(temperature)} {_format_lammps_number(thermostat_damp_ps)}",
+        )
+    return updated
+
+
+def _insert_before_first_lammps_run(lines: list[str], new_line: str) -> list[str]:
+    for index, line in enumerate(lines):
+        tokens = _lammps_code_tokens(line)
+        if tokens and tokens[0].lower() == "run":
+            return [*lines[:index], new_line, *lines[index:]]
+    return [*lines, new_line]
+
+
+def _lammps_code_tokens(line: str) -> list[str]:
+    code = line.split("#", 1)[0].strip()
+    if not code:
+        return []
+    return code.split()
+
+
+def _replace_lammps_code_tokens(original_line: str, tokens: list[str]) -> str:
+    indent = original_line[: len(original_line) - len(original_line.lstrip())]
+    suffix = ""
+    if "#" in original_line:
+        suffix = " #" + original_line.split("#", 1)[1]
+    return indent + " ".join(tokens) + suffix
+
+
+def _looks_numeric(value: str) -> bool:
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _format_lammps_number(value: float) -> str:
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.6f}".rstrip("0").rstrip(".")

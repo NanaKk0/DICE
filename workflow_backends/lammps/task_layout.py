@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
-import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+from workflow_backends.common.model_files import link_model_file
 
 
 @dataclass
@@ -26,8 +26,7 @@ class SamplingTask:
     conf_lmp: Path
     input_lammps: Path
     model_paths: list[Path]
-    lammps_command: str
-    plugin_path: Path | None
+    lammps_command: list[str]
 
 
 @dataclass
@@ -70,22 +69,17 @@ def extract_model_paths(committee_pool: list[dict[str, Any]]) -> list[Path]:
     return [Path(member["graph_pb"]).resolve() for member in committee_pool]
 
 
-def copy_models_into_task(task_dir: Path, model_paths: list[Path]) -> list[Path]:
-    copied = []
+def link_models_into_task(task_dir: Path, model_paths: list[Path]) -> list[Path]:
+    linked = []
     for model_index, model_path in enumerate(model_paths):
         suffix = model_path.suffix or ".pb"
         target = task_dir / f"graph_{model_index:03d}{suffix}"
-        if target.exists() or target.is_symlink():
-            target.unlink()
-        try:
-            target.symlink_to(model_path)
-        except OSError:
-            try:
-                os.link(model_path, target)
-            except OSError:
-                shutil.copy2(model_path, target)
-        copied.append(target)
-    return copied
+        linked.append(link_model_file(model_path, target))
+    return linked
+
+
+def copy_models_into_task(task_dir: Path, model_paths: list[Path]) -> list[Path]:
+    return link_models_into_task(task_dir, model_paths)
 
 
 def serialize_task(task: SamplingTask) -> dict[str, Any]:
@@ -94,7 +88,6 @@ def serialize_task(task: SamplingTask) -> dict[str, Any]:
     payload["conf_lmp"] = str(task.conf_lmp.resolve())
     payload["input_lammps"] = str(task.input_lammps.resolve())
     payload["model_paths"] = [str(item) for item in task.model_paths]
-    payload["plugin_path"] = None if task.plugin_path is None else str(task.plugin_path.resolve())
     return payload
 
 
@@ -114,6 +107,5 @@ def serialize_job_payload(task: SamplingTask) -> dict[str, Any]:
         "task_dir": str(task.task_dir.resolve()),
         "conf_lmp": str(task.conf_lmp.resolve()),
         "model_paths": [str(item) for item in task.model_paths],
-        "lammps_command": str(task.lammps_command),
-        "plugin_path": None if task.plugin_path is None else str(task.plugin_path.resolve()),
+        "lammps_command": list(task.lammps_command),
     }

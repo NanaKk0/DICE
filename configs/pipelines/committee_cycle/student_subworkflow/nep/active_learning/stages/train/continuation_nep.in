@@ -1,0 +1,17 @@
+type         3 H O Pt
+zbl          2.0
+version      4
+cutoff       6.0 5.0
+n_max        4 4
+basis_size   8 8
+l_max        4 2 1
+neuron       80
+lambda_1     0.02
+lambda_2     0.02
+lambda_e     0.3
+lambda_f     0.3
+lambda_v     0.01
+batch        1000
+population   20
+generation   7500
+save_potential 3000 0 1

@@ -4,11 +4,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ase import Atoms
-from ase.io import read, write
 
+def load_atoms_list(path: str | Path) -> list[Any]:
+    from ase.io import read
 
-def load_atoms_list(path: str | Path) -> list[Atoms]:
     return list(read(str(path), index=":"))
 
 
@@ -32,17 +31,15 @@ def read_json(path: str | Path) -> Any:
         return json.load(f)
 
 
-def write_candidate_xyz(path: str | Path, atoms_list: list[Atoms]) -> Path:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if len(atoms_list) == 0:
-        path.write_text("", encoding="utf-8")
-        return path
-    write(path, atoms_list, format="extxyz")
-    return path
+def write_candidate_xyz(path: str | Path, atoms_list: list[Any]) -> Path:
+    from workflow_core.structures.formats import write_extxyz_structures
+
+    return write_extxyz_structures(path, atoms_list, allow_empty=True)
 
 
-def append_candidate_xyz(path: str | Path, atoms_list: list[Atoms]) -> Path:
+def append_candidate_xyz(path: str | Path, atoms_list: list[Any]) -> Path:
+    from ase.io import write
+
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if len(atoms_list) == 0:

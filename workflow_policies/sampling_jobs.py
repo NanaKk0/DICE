@@ -46,7 +46,7 @@ def build_sampling_jobs(
                     "source_structure_id": source_structure_id,
                     "temperature": float(temperature),
                     "steps": int(md_cfg["steps"]),
-                    "timestep_fs": float(md_cfg["timestep_fs"]),
+                    "timestep_fs": float(md_cfg.get("timestep_fs", 1.0)),
                     "driver_model_index": int(driver["model_index"]),
                     "driver_graph_path": str(Path(driver["graph_pb"]).resolve()),
                     "job_seed": int(md_cfg.get("seed", 20260319)) + job_index * 97,

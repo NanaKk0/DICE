@@ -1,0 +1,9 @@
+{
+  "stages": [
+    {"stage": "sampling", "config": "../stages/sampling/short_md.json"},
+    {"stage": "student_relabel_input_filtering", "config": "../stages/student_relabel_input_filtering/short_random_cap.json"},
+    {"stage": "relabel", "config": "../stages/relabel/teacher_relabel.json"},
+    {"stage": "train", "config": "../stages/train/continuation_train.json"},
+    {"stage": "seed_pool_refresh", "config": "../stages/seed_pool_refresh/short_refresh.json"}
+  ]
+}

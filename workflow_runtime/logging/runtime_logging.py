@@ -70,20 +70,26 @@ def is_verbose_enabled():
     return value.lower() in {"1", "true", "yes", "on"}
 
 
-def ensure_step_log_file(paths, step_name, round_id, filename=None):
-    log_dir = paths.root / "logs" / f"r{round_id}"
-    log_dir.mkdir(parents=True, exist_ok=True)
+def ensure_step_log_file(paths, step_name, round_id, filename=None, *, stream="stdout", semantic_parts=None):
+    del step_name, filename
+    if semantic_parts is not None:
+        if stream not in {"stdout", "stderr"}:
+            raise ValueError(f"unsupported canonical log stream: {stream!r}")
+        log_dir = paths.semantic_logs_dir(round_id, *tuple(semantic_parts))
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir / f"{stream}.log"
 
-    if filename is None:
-        filename = f"{step_name}.log"
-
-    return log_dir / filename
+    raise ValueError("canonical step logs require semantic_parts and stream='stdout' or 'stderr'")
 
 
 def ensure_step_log_dir(paths, round_id):
-    log_dir = paths.root / "logs" / f"r{round_id}"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    del paths, round_id
+    raise ValueError("canonical step log directories require semantic workflow parts")
 
+
+def ensure_semantic_step_log_dir(paths, round_id, *semantic_parts):
+    log_dir = paths.semantic_logs_dir(round_id, *semantic_parts)
+    log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 
 

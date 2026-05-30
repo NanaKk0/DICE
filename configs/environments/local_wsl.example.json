@@ -1,0 +1,56 @@
+{
+  "_notes": [
+    "Local-only schema v3 environment profile example.",
+    "Each source_list script is user-owned and may activate conda, export PATH/LD_LIBRARY_PATH, set cache variables, and run checks.",
+    "Executables are explicit user declarations. They may be absolute paths or command names made visible by the sourced scripts."
+  ],
+  "schema_version": 3,
+  "software_profiles": {
+    "mace_les": {
+      "environment": {
+        "source_list": [
+          "/mnt/c/Users/1/Desktop/mlff_workflow/configs/environments/scripts/mace-les.env.sh"
+        ]
+      },
+      "executables": {
+        "mace_run_train": "mace_run_train"
+      }
+    },
+    "deepmd_lammps_dpa4": {
+      "environment": {
+        "source_list": [
+          "/mnt/c/Users/1/Desktop/mlff_workflow/configs/environments/scripts/deepmd-lammps-dpa4.env.sh"
+        ]
+      },
+      "executables": {
+        "dp": "/home/nanako/miniconda3/envs/deepmd-lammps-dpa4/bin/dp",
+        "lmp": "/mnt/c/Users/1/Desktop/mlff_workflow/software/deepmd-lammps-dpa4/lammps/build/lmp"
+      }
+    },
+    "gpumd_nep": {
+      "environment": {
+        "source_list": [
+          "/mnt/c/Users/1/Desktop/mlff_workflow/configs/environments/scripts/gpumd-nep.env.sh"
+        ]
+      },
+      "executables": {
+        "nep": "/mnt/c/Users/1/Desktop/mlff_workflow/software/gpumd-nep/GPUMD/src/nep",
+        "gpumd": "/mnt/c/Users/1/Desktop/mlff_workflow/software/gpumd-nep/GPUMD/src/gpumd"
+      }
+    }
+  },
+  "bindings": {
+    "teacher_backend.mace.foundation_train": "mace_les",
+    "teacher_backend.mace.finetune": "mace_les",
+    "teacher_backend.mace.relabel": "mace_les",
+    "teacher_backend.deepmd.foundation_train": "deepmd_lammps_dpa4",
+    "teacher_backend.deepmd.finetune": "deepmd_lammps_dpa4",
+    "teacher_backend.deepmd.relabel": "deepmd_lammps_dpa4",
+    "student_backend.deepmd.train": "deepmd_lammps_dpa4",
+    "student_backend.deepmd.evaluate": "deepmd_lammps_dpa4",
+    "sampling_backend.lammps.sample": "deepmd_lammps_dpa4",
+    "student_backend.nep.train": "gpumd_nep",
+    "student_backend.nep.evaluate": "gpumd_nep",
+    "sampling_backend.gpumd.sample": "gpumd_nep"
+  }
+}

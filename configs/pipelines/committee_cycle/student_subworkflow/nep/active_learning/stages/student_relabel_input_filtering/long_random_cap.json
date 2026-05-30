@@ -1,0 +1,10 @@
+{
+  "selection_mode": "random_per_system",
+  "candidate": {
+    "max_structures_per_system": 200
+  },
+  "failed": {
+    "max_structures_per_system": 100
+  },
+  "random_seed": 20260517
+}

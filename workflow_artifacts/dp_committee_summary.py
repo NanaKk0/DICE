@@ -50,13 +50,24 @@ def choose_best_driver_index(members: list[dict[str, Any]]) -> int:
         and math.isfinite(float(member.get("final_val_rmse_e")))
     ]
     if not successful:
+        successful = [
+            member for member in members
+            if member.get("status") == "success"
+            and member.get("final_train_rmse_f") is not None
+            and member.get("final_train_rmse_e") is not None
+            and math.isfinite(float(member.get("final_train_rmse_f")))
+            and math.isfinite(float(member.get("final_train_rmse_e")))
+        ]
+    if not successful:
         raise RuntimeError("No successful committee members available for driver selection")
 
     best = min(
         successful,
         key=lambda item: (
-            float(item.get("final_val_rmse_f", float("inf"))),
-            float(item.get("final_val_rmse_e", float("inf"))),
+            _sortable_metric(item.get("final_val_rmse_f")),
+            _sortable_metric(item.get("final_val_rmse_e")),
+            _sortable_metric(item.get("final_train_rmse_f")),
+            _sortable_metric(item.get("final_train_rmse_e")),
             int(item["model_index"]),
         ),
     )
@@ -77,7 +88,15 @@ def write_committee_summary(
 
     best_driver_index = choose_best_driver_index(members)
     best_member = next(member for member in members if int(member["model_index"]) == best_driver_index)
-    best_driver_graph = str(Path(best_member["graph_pb"]).resolve())
+    normalized_members = []
+    for member in members:
+        normalized = dict(member)
+        model_path = str(Path(str(normalized.get("model_path") or normalized["graph_pb"])).resolve())
+        normalized["model_path"] = model_path
+        normalized.setdefault("graph_pb", model_path)
+        normalized_members.append(normalized)
+    best_driver_member = next(member for member in normalized_members if int(member["model_index"]) == best_driver_index)
+    best_driver_graph = str(Path(best_driver_member["model_path"]).resolve())
 
     payload = {
         "committee_size": int(committee_size),
@@ -85,7 +104,7 @@ def write_committee_summary(
         "split_meta_path": str(Path(split_meta_path).resolve()),
         "train_systems": [str(Path(path).resolve()) for path in train_systems],
         "valid_systems": [str(Path(path).resolve()) for path in valid_systems],
-        "members": members,
+        "members": normalized_members,
         "best_driver_index": int(best_driver_index),
         "best_driver_graph": best_driver_graph,
         "driver_selection_mode": "physical_eval_selection" if isinstance(best_member.get("selection_metrics"), dict) else "legacy_val_rmse",
@@ -94,6 +113,6 @@ def write_committee_summary(
     with open(summary_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, ensure_ascii=False)
 
-    driver_copy_path = summary_path.parent / "graph.pb"
+    driver_copy_path = summary_path.parent / Path(best_driver_graph).name
     shutil.copy2(best_driver_graph, driver_copy_path)
     return summary_path

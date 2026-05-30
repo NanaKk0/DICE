@@ -54,7 +54,11 @@ def build_fast_selected_record(*, atoms, job: dict[str, Any], frame_index: int, 
         or atoms.info.get("seed_structure_id")
         or f"{Path(job['initial_structure_path']).stem}_step_{int(model_devi_row['step'])}"
     )
-    atoms.info["sampling_backend"] = "lammps_deepmd"
+    atoms.info["student_backend"] = "deepmd"
+    atoms.info["sampling_backend"] = "lammps"
+    atoms.info["uncertainty_source"] = "model_devi"
+    atoms.info["student_uncertainty"] = float(model_devi_row["max_devi_f"])
+    atoms.info["uncertainty_metric"] = "force_std_max"
     atoms.info["source_task"] = str(job["job_id"])
     atoms.info["source_seed"] = str(Path(job["initial_structure_path"]).name)
     atoms.info["md_step"] = int(model_devi_row["step"])
@@ -87,6 +91,15 @@ def build_fast_pool_atoms(*, atoms, job: dict[str, Any], model_devi_row: dict[st
         or f"{job['job_id']}_step_{int(model_devi_row['step'])}"
     )
     item = ensure_minimal_seed_metadata(item, system_id=system_id, structure_id=structure_id)
+    item.info["student_backend"] = "deepmd"
+    item.info["sampling_backend"] = "lammps"
+    item.info["uncertainty_source"] = "model_devi"
+    item.info["student_uncertainty"] = float(model_devi_row["max_devi_f"])
+    item.info["uncertainty_metric"] = "force_std_max"
     item.info["force_std_max"] = float(model_devi_row["max_devi_f"])
+    item.info["source_task"] = str(job["job_id"])
+    item.info["source_job_id"] = str(job["job_id"])
+    item.info["source_frame_index"] = int(model_devi_row.get("frame_index", 0))
+    item.info["md_step"] = int(model_devi_row["step"])
     item.info["route"] = str(route)
     return item

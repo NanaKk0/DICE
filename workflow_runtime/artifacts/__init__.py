@@ -1,0 +1,2 @@
+"""Runtime artifact completion contracts."""
+

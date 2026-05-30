@@ -16,7 +16,6 @@ from workflow_backends.lammps.execution_plan import (
 )
 from workflow_backends.lammps.input_writer import (
     build_lammps_env,
-    find_deepmd_plugin,
     find_lammps_command,
     rotate_models,
     write_lammps_deepmd_input,
@@ -27,13 +26,29 @@ from workflow_backends.lammps.task_layout import (
     SamplingTask,
     SamplingTaskResult,
     TaskGroup,
-    copy_models_into_task as _copy_models_into_task,
     extract_model_paths as _extract_model_paths,
+    link_models_into_task as _link_models_into_task,
     serialize_job_payload as _serialize_job_payload,
     serialize_task as _serialize_task,
 )
 from workflow_core.common.io import write_json
 from workflow_core.structures.formats import write_lammps_seed_data_from_paths
+
+
+def _append_args_to_command(command: list[str], *args: str) -> list[str]:
+    command_items = [str(item) for item in command]
+    extra_args = [str(item) for item in args]
+    if not extra_args:
+        return command_items
+    if len(command_items) == 3 and command_items[0] == "bash" and command_items[1] == "-lc":
+        lines = str(command_items[2]).splitlines()
+        for index in range(len(lines) - 1, -1, -1):
+            stripped = lines[index].lstrip()
+            if stripped.startswith("exec "):
+                indent = lines[index][: len(lines[index]) - len(stripped)]
+                lines[index] = f"{indent}{stripped} {shlex.join(extra_args)}"
+                return ["bash", "-lc", "\n".join(lines)]
+    return [*command_items, *extra_args]
 
 
 class LammpsTaskSampler:
@@ -58,11 +73,6 @@ class LammpsTaskSampler:
         self.type_map = list(self.lammps_cfg.get("type_map", ["Pt", "O", "H"]))
         self.lammps_env = build_lammps_env(self.lammps_cfg)
         self.lammps_command = find_lammps_command(self.lammps_cfg)
-        self.plugin_path = find_deepmd_plugin(
-            self.lammps_cfg,
-            lammps_cmd=self.lammps_command,
-            env=self.lammps_env,
-        )
         self.full_model_paths = _extract_model_paths(self.committee_pool)
         self.tasks_manifest_path = self.work_root / "tasks_manifest.json"
         self._prepared_tasks: list[SamplingTask] = []
@@ -107,23 +117,29 @@ class LammpsTaskSampler:
                 task_index=task_index,
                 enabled=bool(self.lammps_cfg.get("rotate_driver_model", True)),
             )
-            copied_models = _copy_models_into_task(task_dir, rotated_models)
+            copied_models = _link_models_into_task(task_dir, rotated_models)
+            model_devi_interval = int(
+                self.lammps_cfg.get("model_devi_interval", self.lammps_cfg.get("model_devi_freq", 10))
+            )
+            dump_interval = int(self.lammps_cfg.get("dump_interval", self.lammps_cfg.get("dump_freq", 10)))
             input_lammps = write_lammps_deepmd_input(
                 task_dir / "input.lammps",
                 model_paths=copied_models,
                 type_map=self.type_map,
-                plugin_path=self.plugin_path,
                 nsteps=int(job["steps"]),
                 timestep_fs=float(job["timestep_fs"]),
                 temperature=float(job["temperature"]),
                 ensemble=str(self.lammps_cfg.get("ensemble", "nvt")),
                 thermo_freq=int(self.lammps_cfg.get("thermo_freq", 10)),
-                dump_freq=int(self.lammps_cfg.get("dump_freq", 10)),
-                model_devi_freq=int(self.lammps_cfg.get("model_devi_freq", 10)),
+                dump_freq=dump_interval,
+                model_devi_freq=model_devi_interval,
                 atomic_model_devi=bool(self.lammps_cfg.get("atomic_model_devi", True)),
                 neighbor_bin=float(self.lammps_cfg.get("neighbor_bin", 2.0)),
                 thermostat_damp_fs=float(self.lammps_cfg.get("thermostat_damp_fs", 100.0)),
                 seed=int(job["job_seed"]),
+                template_path=self.lammps_cfg.get("input_template_ref") or self.lammps_cfg.get("input_lammps_template"),
+                temperature_override_declared=bool(self.lammps_cfg.get("temperature_override_declared", False)),
+                steps_override_declared=bool(self.lammps_cfg.get("steps_override_declared", False)),
             )
             task = SamplingTask(
                 task_id=task_id,
@@ -143,8 +159,7 @@ class LammpsTaskSampler:
                 conf_lmp=target_conf,
                 input_lammps=input_lammps,
                 model_paths=copied_models,
-                lammps_command=str(self.lammps_command),
-                plugin_path=None if self.plugin_path is None else self.plugin_path.resolve(),
+                lammps_command=list(self.lammps_command),
             )
             write_json(task_dir / "job.json", _serialize_job_payload(task))
             write_json(
@@ -157,8 +172,8 @@ class LammpsTaskSampler:
                     "temperature": float(task.temperature),
                     "nsteps": int(task.steps),
                     "timestep_fs": float(task.timestep_fs),
-                    "dump_freq": int(self.lammps_cfg.get("dump_freq", 10)),
-                    "model_devi_freq": int(self.lammps_cfg.get("model_devi_freq", 10)),
+                    "dump_interval": dump_interval,
+                    "model_devi_interval": model_devi_interval,
                     "driver_model_index": int(task.driver_model_index),
                     "model_paths": [item.name for item in task.model_paths],
                 },
@@ -169,8 +184,7 @@ class LammpsTaskSampler:
             self.tasks_manifest_path,
             {
                 "task_layout_version": str(self.lammps_cfg.get("task_layout_version", "v2")),
-                "lammps_command": str(self.lammps_command),
-                "plugin_path": None if self.plugin_path is None else str(self.plugin_path.resolve()),
+                "lammps_command": list(self.lammps_command),
                 "type_map": self.type_map,
                 "max_parallel_tasks": int(self.lammps_cfg.get("max_parallel_tasks", 1) or 1),
                 "device_policy": str(self.lammps_cfg.get("device_policy", "cpu")),
@@ -382,13 +396,14 @@ class LammpsTaskSampler:
             "(",
             "  code=0",
             f"  printf '%s\\n' \"$(date +%s.%N)\" > {shlex.quote(str(start_path))}",
-            f"  if cd {shlex.quote(str(task.task_dir.resolve()))}; then",
+                f"  if cd {shlex.quote(str(task.task_dir.resolve()))}; then",
         ]
         if cuda_device is not None:
             lines.append(f"    export CUDA_VISIBLE_DEVICES={shlex.quote(str(cuda_device))}")
+        lammps_command = shlex.join(_append_args_to_command(task.lammps_command, "-in", "input.lammps"))
         lines.extend(
             [
-                f"    {shlex.quote(str(task.lammps_command))} -in input.lammps > lammps.stdout 2>&1",
+                f"    {lammps_command} > lammps.stdout 2>&1",
                 "    code=$?",
                 "  else",
                 "    code=97",
@@ -511,7 +526,7 @@ class LammpsTaskSampler:
         paths["start_marker"].write_text(str(time.time()), encoding="utf-8")
         with open(paths["stdout"], "w", encoding="utf-8") as out:
             proc = subprocess.run(
-                [str(task.lammps_command), "-in", "input.lammps"],
+                _append_args_to_command(task.lammps_command, "-in", "input.lammps"),
                 cwd=task.task_dir,
                 env=env,
                 stdout=out,

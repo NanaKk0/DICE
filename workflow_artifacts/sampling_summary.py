@@ -19,7 +19,6 @@ def trim_uncertainty_only_sampling_summary(summary_path: Path) -> Path:
         "high_tail_buffer_count",
         "selected_tail_counts",
         "selected_per_job_top",
-        "selected_xyz",
         "selected_jsonl",
         "decision_metric",
         "level_f_lo",

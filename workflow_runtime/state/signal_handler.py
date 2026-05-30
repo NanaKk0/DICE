@@ -2,13 +2,11 @@
 
 import signal
 from types import FrameType
-from typing import Callable
-
-from workflow_runtime.state.run_state import RunStateManager
+from typing import Any, Callable
 
 
 def install_signal_handlers(
-    state_mgr: RunStateManager,
+    state_mgr: Any,
     get_current_step_id: Callable[[], str | None],
 ) -> None:
     def _handle(signum: int, frame: FrameType | None) -> None:

@@ -1,6 +1,62 @@
 from pathlib import Path
 
 
+class RuntimeRoots:
+
+    def __init__(self, artifacts: Path, runtime: Path, logs: Path) -> None:
+        self.artifacts = Path(artifacts).resolve()
+        self.runtime = Path(runtime).resolve()
+        self.logs = Path(logs).resolve()
+
+
+class DomainPaths:
+
+    def __init__(self, paths: "PathManager") -> None:
+        self._paths = paths
+
+    def teacher_round_artifacts_dir(self, teacher_round):
+        return self._paths.teacher_round_artifacts_dir(teacher_round)
+
+    def committee_cycle_artifacts_dir(self, teacher_round):
+        return self._paths.committee_cycle_artifacts_dir(teacher_round)
+
+    def student_subworkflow_artifacts_dir(self, teacher_round):
+        return self._paths.student_subworkflow_artifacts_dir(teacher_round)
+
+    def student_round_artifacts_dir(self, teacher_round, student_round):
+        return self._paths.student_round_artifacts_dir(teacher_round, student_round)
+
+    def student_stage_artifacts_dir(self, teacher_round, student_round, stage_run_index, stage_type):
+        return self._paths.student_stage_artifacts_dir(teacher_round, student_round, stage_run_index, stage_type)
+
+    def student_stage_backend_logs_dir(self, teacher_round, student_round, stage_run_index, stage_type):
+        return self._paths.student_stage_backend_logs_dir(teacher_round, student_round, stage_run_index, stage_type)
+
+    def first_principles_artifacts_dir(self, teacher_round):
+        return self._paths.first_principles_artifacts_dir(teacher_round)
+
+    def first_principles_substep_artifacts_dir(self, teacher_round, substep):
+        return self._paths.first_principles_substep_artifacts_dir(teacher_round, substep)
+
+    def first_principles_input_xyz(self, teacher_round):
+        return self._paths.first_principles_input_xyz(teacher_round)
+
+    def first_principles_tasks_dir(self, teacher_round):
+        return self._paths.first_principles_tasks_dir(teacher_round)
+
+    def first_principles_run_dir(self, teacher_round):
+        return self._paths.first_principles_run_dir(teacher_round)
+
+    def first_principles_collect_dir(self, teacher_round):
+        return self._paths.first_principles_collect_dir(teacher_round)
+
+    def first_principles_labeled_xyz(self, teacher_round):
+        return self._paths.first_principles_labeled_xyz(teacher_round)
+
+    def first_principles_failed_xyz(self, teacher_round):
+        return self._paths.first_principles_failed_xyz(teacher_round)
+
+
 class PathManager:
 
     def __init__(self, workspace_root=".", runtime_root=None):
@@ -10,516 +66,180 @@ class PathManager:
             runtime_root = self.workspace_root / "runs" / "default"
         self.runtime_root = Path(runtime_root).resolve()
 
-        # Backward-compatible alias for runtime-scoped generated files.
+        # Run root plus the target-mode canonical run roots.
         self.root = self.runtime_root
-
-        self.data = self.runtime_root / "data"
-        self.results = self.runtime_root / "results"
+        self.artifacts = self.runtime_root / "artifacts"
+        self.runtime = self.runtime_root / "runtime"
         self.logs = self.runtime_root / "logs"
-        self.run_meta = self.runtime_root / "run_meta"
-        self.metrics = self.runtime_root / "metrics"
-        self.plots = self.runtime_root / "plots"
+        self.runtime_roots = RuntimeRoots(self.artifacts, self.runtime, self.logs)
+        self.domain_paths = DomainPaths(self)
         self.user_assets = self.workspace_root / "user_assets"
         self.mydataset = self.user_assets
         self.configs = self.workspace_root / "configs"
         self.runs = self.workspace_root / "runs"
 
-        self.dp_train = self.data / "dp_train_data"
-        self.dp_subworkflow = self.data / "dp_subworkflow"
-        self.sampling = self.data / "sampling"
-        self.active_learning = self.data / "active_learning"
-        self.mace_train = self.data / "mace_train_data"
-        self.cycle = self.data / "committee_cycle"
-        self.seed_pool = self.data / "seed_pool"
-
-        self.dp_committee = self.results / "dp_committee_model"
-        self.dp_subworkflow_results = self.results / "dp_subworkflow"
-        self.mace_committee = self.results / "mace_committee_model"
-        self.mace_model = self.results / "mace_foundation_model"
-        self.cycle_results = self.results / "committee_cycle"
-        self.seed_pool_results = self.results / "seed_pool"
-        self.dft_submit = self.data / "dft_submit"
-        self.dft_submit_results = self.results / "dft_submit"
-
         self.user_mace_train = self.user_assets / "mace_train"
         self.user_mace_finetune = self.user_assets / "mace_finetune"
+        self.user_teacher_finetune = self.user_assets / "teacher_finetune"
+        self.user_student_initial = self.user_assets / "student_initial"
         self.user_dp_train = self.user_assets / "dp_train"
         self.user_seed_pool = self.user_assets / "seed_pool"
         self.user_foundation_models = self.user_assets / "foundation_models"
         self.user_dft = self.user_assets / "dft"
 
-    def runtime_data_dir(self):
+    @staticmethod
+    def teacher_round_key(teacher_round):
 
-        return self.data
+        return f"teacher_round_{int(teacher_round):03d}"
 
-    def runtime_results_dir(self):
+    def teacher_round_artifacts_dir(self, teacher_round):
 
-        return self.results
+        return self.artifacts / self.teacher_round_key(teacher_round)
 
-    def runtime_logs_dir(self):
+    def teacher_round_runtime_dir(self, teacher_round):
 
-        return self.logs
+        return self.runtime / self.teacher_round_key(teacher_round)
 
-    def runtime_meta_dir(self):
+    def teacher_round_logs_dir(self, teacher_round):
 
-        return self.run_meta
-
-    def runtime_metrics_dir(self):
-
-        return self.metrics
-
-    def runtime_plots_dir(self):
-
-        return self.plots
-
-    def run_manifest_json(self):
-
-        return self.runtime_meta_dir() / "run_manifest.json"
-
-    def run_summary_json(self):
-
-        return self.runtime_meta_dir() / "run_summary.json"
-
-    def metrics_run_summary_json(self):
-
-        return self.runtime_metrics_dir() / "run_summary.json"
-
-    def metrics_run_summary_csv(self):
-
-        return self.runtime_metrics_dir() / "run_summary.csv"
-
-    def metrics_round_metrics_csv(self):
-
-        return self.runtime_metrics_dir() / "round_metrics.csv"
-
-    def metrics_step_metrics_csv(self):
-
-        return self.runtime_metrics_dir() / "step_metrics.csv"
-
-    def metrics_training_metrics_csv(self):
-
-        return self.runtime_metrics_dir() / "training_metrics.csv"
-
-    def metrics_sampling_metrics_csv(self):
-
-        return self.runtime_metrics_dir() / "sampling_metrics.csv"
-
-    def metrics_labeling_metrics_csv(self):
-
-        return self.runtime_metrics_dir() / "labeling_metrics.csv"
-
-    def metrics_resource_metrics_csv(self):
-
-        return self.runtime_metrics_dir() / "resource_metrics.csv"
-
-    def metrics_event_log_jsonl(self):
-
-        return self.runtime_metrics_dir() / "event_log.jsonl"
-
-    def metrics_config_snapshot_json(self):
-
-        return self.runtime_metrics_dir() / "config_snapshot.json"
-
-    def distribution_plots_dir(self):
-
-        return self.runtime_plots_dir() / "distribution"
-
-    def outer_round_distribution_dir(self):
-
-        return self.distribution_plots_dir() / "outer_rounds"
-
-    def dp_round_distribution_dir(self):
-
-        return self.distribution_plots_dir() / "dp_rounds"
-
-    def outer_round_dft_distribution_png(self, outer_round):
-
-        return self.outer_round_distribution_dir() / f"r{outer_round}_dft_increment_vs_base.png"
-
-    def outer_round_dft_distribution_json(self, outer_round):
-
-        return self.outer_round_distribution_dir() / f"r{outer_round}_dft_increment_vs_base.json"
-
-    def outer_round_dft_distribution_csv(self, outer_round):
-
-        return self.outer_round_distribution_dir() / f"r{outer_round}_dft_increment_vs_base.csv"
-
-    def dp_round_distribution_png(self, outer_round, dp_round):
-
-        return self.dp_round_distribution_dir() / f"r{outer_round}_dp_r{dp_round}_increment_vs_prev.png"
-
-    def dp_round_distribution_json(self, outer_round, dp_round):
-
-        return self.dp_round_distribution_dir() / f"r{outer_round}_dp_r{dp_round}_increment_vs_prev.json"
-
-    def dp_round_distribution_csv(self, outer_round, dp_round):
-
-        return self.dp_round_distribution_dir() / f"r{outer_round}_dp_r{dp_round}_increment_vs_prev.csv"
-
-    def workflow_snapshot_yaml(self):
-
-        return self.runtime_meta_dir() / "workflow_snapshot.yaml"
-
-    def workflow_round_meta_dir(self, outer_round):
-
-        return self.runtime_meta_dir() / "rounds" / f"r{outer_round}"
-
-    def workflow_round_state_json(self, outer_round):
-
-        return self.workflow_round_meta_dir(outer_round) / "workflow_state.json"
+        return self.logs / self.teacher_round_key(teacher_round)
 
     def workflow_round_marker_dir(self, outer_round):
 
-        return self.workflow_round_meta_dir(outer_round) / "markers"
+        return self.teacher_round_runtime_dir(outer_round) / "markers"
 
     def workflow_round_preflight_json(self, outer_round):
 
-        return self.workflow_round_meta_dir(outer_round) / "preflight_report.json"
+        return self.teacher_round_runtime_dir(outer_round) / "preflight" / "preflight_report.json"
 
-    def mace_foundation_data_dir(self):
+    def workflow_round_snapshot_dir(self, outer_round):
 
-        return self.mace_train / "foundation"
+        return self.teacher_round_runtime_dir(outer_round) / "snapshot"
 
-    def dp_data_dir(self, r):
+    @staticmethod
+    def student_round_key(student_round):
 
-        return self.dp_train / f"r{r}"
+        return f"student_round_{int(student_round):03d}"
 
-    def mace_model_dir(self, r=None):
+    @staticmethod
+    def stage_key(stage_run_index, stage_type):
 
-        return self.mace_model
+        return f"stage_{int(stage_run_index):02d}_{str(stage_type).strip()}"
 
-    def mace_committee_dir(self, r):
+    def semantic_artifacts_dir(self, teacher_round, *parts):
 
-        return self.mace_committee / f"r{r}"
+        path = self.teacher_round_artifacts_dir(teacher_round)
+        for part in parts:
+            path = path / str(part)
+        return path
 
-    def dp_train_data_dir(self, r):
+    def semantic_logs_dir(self, teacher_round, *parts):
 
-        return self.dp_data_dir(r) / "train"
+        path = self.teacher_round_logs_dir(teacher_round)
+        for part in parts:
+            path = path / str(part)
+        return path
 
-    def dp_val_data_dir(self, r):
+    def semantic_stdout_log(self, teacher_round, *parts):
 
-        return self.dp_data_dir(r) / "val"
+        return self.semantic_logs_dir(teacher_round, *parts) / "stdout.log"
 
-    def mace_train_data_dir(self, r):
+    def semantic_stderr_log(self, teacher_round, *parts):
 
-        return self.mace_foundation_data_dir() / "train"
+        return self.semantic_logs_dir(teacher_round, *parts) / "stderr.log"
 
-    def active_learning_data_dir(self, r):
+    def teacher_foundation_train_artifacts_dir(self, teacher_round):
 
-        return self.active_learning / f"r{r}"
+        return self.semantic_artifacts_dir(teacher_round, "teacher_foundation_train")
 
-    def sampling_dir(self, r):
+    def committee_cycle_artifacts_dir(self, teacher_round):
 
-        return self.sampling / f"r{r}"
+        return self.semantic_artifacts_dir(teacher_round, "committee_cycle")
 
-    def sampling_seed_pool_xyz(self, r):
+    def teacher_committee_finetune_artifacts_dir(self, teacher_round):
 
-        return self.sampling_dir(r) / "seed_pool.xyz"
+        return self.semantic_artifacts_dir(teacher_round, "committee_cycle", "teacher_committee_finetune")
 
-    def manual_seed_dir(self, r):
+    def teacher_committee_finetune_backend_logs_dir(self, teacher_round):
 
-        return self.sampling_dir(r) / "manual_seed"
+        return self.semantic_logs_dir(teacher_round, "committee_cycle", "teacher_committee_finetune") / "backend_logs"
 
-    def sampling_traj_pattern(self, r):
+    def student_subworkflow_artifacts_dir(self, teacher_round):
 
-        return str(self.sampling_dir(r) / "T_*" / "*.xyz")
+        return self.semantic_artifacts_dir(teacher_round, "committee_cycle", "student_subworkflow")
 
-    def init_xyz(self, r):
+    def student_subworkflow_source_dir(self, teacher_round):
 
-        return self.active_learning_data_dir(r) / "dft.xyz"
+        return self.student_subworkflow_artifacts_dir(teacher_round) / "source"
 
-    def selected_xyz(self, r):
+    def student_subworkflow_initial_seed_pool_xyz(self, teacher_round):
 
-        return self.dp_data_dir(r) / "fps_selected.xyz"
+        return self.student_subworkflow_source_dir(teacher_round) / "initial_seed_pool.xyz"
 
-    def dp_committee_round_dir(self, r):
+    def student_round_artifacts_dir(self, teacher_round, student_round):
 
-        return self.dp_committee / f"r{r}"
+        return self.student_subworkflow_artifacts_dir(teacher_round) / self.student_round_key(student_round)
 
-    def dp_committee_member_model_dir(self, r, model_index):
+    def student_stage_artifacts_dir(self, teacher_round, student_round, stage_run_index, stage_type):
 
-        return self.dp_committee_round_dir(r) / f"model_{model_index:03d}"
+        return self.student_round_artifacts_dir(teacher_round, student_round) / self.stage_key(stage_run_index, stage_type)
 
-    def dp_committee_summary_json(self, r):
+    def student_stage_backend_logs_dir(self, teacher_round, student_round, stage_run_index, stage_type):
 
-        return self.dp_committee_round_dir(r) / "summary.json"
+        return (
+            self.semantic_logs_dir(
+                teacher_round,
+                "committee_cycle",
+                "student_subworkflow",
+                self.student_round_key(student_round),
+                self.stage_key(stage_run_index, stage_type),
+            )
+            / "backend_logs"
+        )
 
-    def dp_sampling_committee_dir(self, r):
+    def student_stage_marker_path(self, teacher_round, student_round, stage_run_index, stage_type, suffix):
 
-        return self.sampling_dir(r) / "committee"
+        return (
+            self.teacher_round_runtime_dir(teacher_round)
+            / "markers"
+            / "committee_cycle"
+            / "student_subworkflow"
+            / self.student_round_key(student_round)
+            / f"{self.stage_key(stage_run_index, stage_type)}.{suffix}"
+        )
 
-    def dp_subworkflow_dir(self, outer_round):
+    def first_principles_artifacts_dir(self, teacher_round):
 
-        return self.dp_subworkflow / f"r{outer_round}"
+        return self.semantic_artifacts_dir(teacher_round, "first_principles")
 
-    def dp_subworkflow_round_dir(self, outer_round, dp_round):
+    def first_principles_substep_artifacts_dir(self, teacher_round, substep):
 
-        return self.dp_subworkflow_dir(outer_round) / f"dp_r{dp_round}"
+        return self.first_principles_artifacts_dir(teacher_round) / str(substep)
 
-    def dp_subworkflow_round_label_dir(self, outer_round, dp_round):
+    def first_principles_input_xyz(self, teacher_round):
 
-        return self.dp_subworkflow_round_dir(outer_round, dp_round) / "label"
+        return self.first_principles_substep_artifacts_dir(teacher_round, "prepare") / "source" / "input_for_first_principles.xyz"
 
-    def dp_subworkflow_round_active_learning_dir(self, outer_round, dp_round):
+    def first_principles_tasks_dir(self, teacher_round):
 
-        return self.dp_subworkflow_round_dir(outer_round, dp_round) / "active_learning"
+        return self.first_principles_substep_artifacts_dir(teacher_round, "prepare") / "tasks"
 
-    def dp_subworkflow_round_dft_screening_dir(self, outer_round, dp_round):
+    def first_principles_run_dir(self, teacher_round):
 
-        return self.dp_subworkflow_results_round_dir(outer_round, dp_round) / "dft_screening"
+        return self.first_principles_substep_artifacts_dir(teacher_round, "run")
 
-    def dp_subworkflow_round_dft_screening_summary_json(self, outer_round, dp_round):
+    def first_principles_collect_dir(self, teacher_round):
 
-        return self.dp_subworkflow_round_dft_screening_dir(outer_round, dp_round) / "summary.json"
+        return self.first_principles_substep_artifacts_dir(teacher_round, "collect")
 
-    def dp_subworkflow_round_dft_screened_xyz(self, outer_round, dp_round):
+    def first_principles_labeled_xyz(self, teacher_round):
 
-        return self.dp_subworkflow_round_active_learning_dir(outer_round, dp_round) / "dft_screened.xyz"
+        return self.first_principles_collect_dir(teacher_round) / "labeled.xyz"
 
-    def dp_subworkflow_round_seed_pool_dir(self, outer_round, dp_round):
+    def first_principles_failed_xyz(self, teacher_round):
 
-        return self.dp_subworkflow_round_dir(outer_round, dp_round) / "seed_pool"
-
-    def dp_subworkflow_seed_pool_xyz(self, outer_round, dp_round):
-
-        return self.dp_subworkflow_round_seed_pool_dir(outer_round, dp_round) / "seed_pool.xyz"
-
-    def dp_subworkflow_round_train_xyz(self, outer_round, dp_round):
-
-        return self.dp_subworkflow_round_label_dir(outer_round, dp_round) / "train.xyz"
-
-    def dp_subworkflow_mace_al_pool_xyz(self, outer_round):
-
-        return self.dp_subworkflow_dir(outer_round) / "mace_al_pool.xyz"
-
-    def dp_subworkflow_screened_dft_pool_xyz(self, outer_round):
-
-        return self.dp_subworkflow_dir(outer_round) / "screened_dft_pool.xyz"
-
-    def dp_subworkflow_dft_screening_reference_xyz(self, outer_round):
-
-        return self.dp_subworkflow_dir(outer_round) / "dft_screening_reference" / "physical_merged.xyz"
-
-    def dp_subworkflow_status_json(self, outer_round):
-
-        return self.dp_subworkflow_results / f"r{outer_round}" / "status.json"
-
-    def dp_subworkflow_results_dir(self, outer_round):
-
-        return self.dp_subworkflow_results / f"r{outer_round}"
-
-    def dp_subworkflow_results_round_dir(self, outer_round, dp_round):
-
-        return self.dp_subworkflow_results_dir(outer_round) / f"dp_r{dp_round}"
-
-    def dp_subworkflow_round_manifest_json(self, outer_round, dp_round):
-
-        return self.dp_subworkflow_results_round_dir(outer_round, dp_round) / "manifest.json"
-
-    def dp_subworkflow_round_summary_json(self, outer_round, dp_round):
-
-        return self.dp_subworkflow_results_round_dir(outer_round, dp_round) / "round_summary.json"
-
-    def dp_subworkflow_round_sampling_dir(self, outer_round, dp_round):
-
-        return self.dp_subworkflow_results_round_dir(outer_round, dp_round) / "sampling"
-
-    def dp_subworkflow_round_entry_summary_json(self, outer_round):
-
-        return self.dp_subworkflow_results_round_dir(outer_round, 0) / "cross_outer_entry_summary.json"
-
-    def dp_subworkflow_round_entry_merged_xyz(self, outer_round):
-
-        return self.dp_subworkflow_round_dir(outer_round, 0) / "cross_outer_entry_merged.xyz"
-
-    def dp_subworkflow_round_committee_dir(self, outer_round, dp_round):
-
-        return self.dp_subworkflow_results_round_dir(outer_round, dp_round) / "dp_committee"
-
-    def dp_subworkflow_round_arch_meta_json(self, outer_round, dp_round):
-
-        return self.dp_subworkflow_round_committee_dir(outer_round, dp_round) / "arch_meta.json"
-
-    def committee_cycle_dir(self, outer_round):
-
-        return self.cycle / f"r{outer_round}"
-
-    def committee_cycle_results_dir(self, outer_round):
-
-        return self.cycle_results / f"r{outer_round}"
-
-    def committee_cycle_status_json(self, outer_round):
-
-        return self.committee_cycle_results_dir(outer_round) / "status.json"
-
-    def committee_cycle_finetune_merged_xyz(self, outer_round):
-
-        return self.committee_cycle_dir(outer_round) / "finetune_input" / "train_merged.xyz"
-
-    def committee_cycle_dp_bootstrap_dir(self, outer_round):
-
-        return self.committee_cycle_dir(outer_round) / "dp_bootstrap_input"
-
-    def committee_cycle_dp_bootstrap_merged_xyz(self, outer_round):
-
-        return self.committee_cycle_dp_bootstrap_dir(outer_round) / "train_merged.xyz"
-
-    def committee_cycle_dp_bootstrap_summary_json(self, outer_round):
-
-        return self.committee_cycle_dp_bootstrap_dir(outer_round) / "summary.json"
-
-    def committee_cycle_finetune_runtime_json(self, outer_round):
-
-        return self.committee_cycle_dir(outer_round) / "finetune_runtime.json"
-
-    def seed_pool_root_dir(self):
-
-        return self.seed_pool
-
-    def seed_pool_systems_dir(self):
-
-        return self.seed_pool_root_dir() / "systems"
-
-    def seed_pool_xyz(self):
-
-        return self.seed_pool_root_dir() / "seed_pool.xyz"
-
-    def seed_pool_meta_json(self):
-
-        return self.seed_pool_root_dir() / "seed_pool_meta.json"
-
-    def seed_candidate_pool_xyz(self):
-
-        return self.seed_pool_root_dir() / "seed_candidate_pool.xyz"
-
-    def seed_candidate_pool_systems_dir(self):
-
-        return self.seed_pool_root_dir() / "candidate_systems"
-
-    def seed_pool_archive_dir(self):
-
-        return self.seed_pool_root_dir() / "archive"
-
-    def seed_pool_archive_candidate_xyz(self, outer_round, dp_round):
-
-        return self.seed_pool_archive_dir() / f"r{outer_round}_dp{dp_round}_candidate.xyz"
-
-    def seed_pool_archive_candidate_summary_json(self, outer_round, dp_round):
-
-        return self.seed_pool_archive_dir() / f"r{outer_round}_dp{dp_round}_candidate_summary.json"
-
-    def seed_pool_selected_dir(self):
-
-        return self.seed_pool_root_dir() / "selected"
-
-    def seed_pool_selected_xyz(self, outer_round, dp_round):
-
-        return self.seed_pool_selected_dir() / f"r{outer_round}_dp{dp_round}_seeds.xyz"
-
-    def seed_pool_selected_systems_dir(self, outer_round, dp_round):
-
-        return self.seed_pool_selected_dir() / f"r{outer_round}_dp{dp_round}_systems"
-
-    def seed_pool_results_dir(self):
-
-        return self.seed_pool_results
-
-    def seed_pool_update_summary_json(self, outer_round, dp_round):
-
-        return self.seed_pool_results_dir() / f"r{outer_round}_dp{dp_round}_update_summary.json"
-
-    def seed_pool_final_snapshot_xyz(self, outer_round):
-
-        return self.seed_pool_results_dir() / f"r{outer_round}_final_seed_pool.xyz"
-
-    def seed_pool_final_snapshot_meta_json(self, outer_round):
-
-        return self.seed_pool_results_dir() / f"r{outer_round}_final_seed_pool_meta.json"
+        return self.first_principles_collect_dir(teacher_round) / "failed.xyz"
 
     def user_initial_seed_pool_dir(self):
 
         return self.user_seed_pool
-
-    def user_external_dft_root_dir(self):
-
-        return self.user_dft
-
-    def user_external_dft_round_dir(self, outer_round):
-
-        return self.user_external_dft_root_dir() / f"r{outer_round}"
-
-    def user_external_dft_labeled_xyz(self, outer_round):
-
-        return self.user_external_dft_round_dir(outer_round) / "labeled.xyz"
-
-    def user_external_dft_failed_xyz(self, outer_round):
-
-        return self.user_external_dft_round_dir(outer_round) / "failed.xyz"
-
-    def user_external_dft_summary_json(self, outer_round):
-
-        return self.user_external_dft_round_dir(outer_round) / "summary.json"
-
-    def user_external_dft_manifest_json(self, outer_round):
-
-        return self.user_external_dft_round_dir(outer_round) / "import_manifest.json"
-
-    def dft_submit_data_dir(self, outer_round):
-
-        return self.dft_submit / f"r{outer_round}"
-
-    def dft_submit_source_dir(self, outer_round):
-
-        return self.dft_submit_data_dir(outer_round) / "source"
-
-    def dft_submit_source_xyz(self, outer_round):
-
-        return self.dft_submit_source_dir(outer_round) / "input_for_dft.xyz"
-
-    def dft_submit_source_meta_json(self, outer_round):
-
-        return self.dft_submit_source_dir(outer_round) / "input_meta.json"
-
-    def dft_submit_job_root(self, outer_round):
-
-        return self.dft_submit_data_dir(outer_round) / "cp2k_jobs"
-
-    def dft_submit_results_dir(self, outer_round):
-
-        return self.dft_submit_results / f"r{outer_round}"
-
-    def dft_submit_task_map_json(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "task_map.json"
-
-    def dft_submit_record_json(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "record.dft.json"
-
-    def dft_submit_status_json(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "status.json"
-
-    def dft_submit_manifest_json(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "manifest.json"
-
-    def dft_submit_log_path(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "submit.log"
-
-    def dft_submit_submit_summary_json(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "submit_summary.json"
-
-    def dft_submit_labeled_xyz(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "labeled.xyz"
-
-    def dft_submit_failed_xyz(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "failed.xyz"
-
-    def dft_submit_collect_summary_json(self, outer_round):
-
-        return self.dft_submit_results_dir(outer_round) / "summary.json"

@@ -1,0 +1,1 @@
+"""Student artifact compatibility facades."""
