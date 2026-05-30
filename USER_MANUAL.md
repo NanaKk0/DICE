@@ -1,8 +1,8 @@
 # DICE 用户使用手册
 
-`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。当前 `v0.1.0` release 主线使用 MACE / MACE-LES teacher committee 做高质量标注与筛分，使用 DeepMD student committee 做低成本采样和不确定度评估。
+`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。当前 `v0.1.0` release 默认主线使用 MACE / MACE-LES teacher committee 做高质量标注与筛分，使用 DeepMD student committee 做低成本采样和不确定度评估。DeepMD DPA-4 已作为上游 teacher backend 接入，可通过 `teacher_backend = "deepmd"` 和 DPA-4 teacher 配置切换。
 
-这份手册说明当前 release 分支的正式运行方式、用户输入、运行时产物、配置文件结构和状态查看方式。
+本文覆盖 release 分支的正式运行方式、用户输入、运行时产物、配置文件结构和状态查看方式。
 
 ## 0. 标准启动方式
 
@@ -31,12 +31,14 @@ nohup python workflow.py Pt-water-interface_roundN.yaml > logs/pt-water-interfac
 
 运行前应先进入具备 MACE、DeepMD、LAMMPS 等能力的环境，并设置好 CUDA、线程、plugin 路径等本机环境变量。
 
-当前正式主线是：
+默认示例主线是：
 
 - 顶层 [`workflow.py`](./workflow.py)
   - `committee_cycle`
-    - MACE teacher committee finetune
+    - MACE / MACE-LES teacher committee finetune
     - DeepMD active-learning student subworkflow
+
+teacher backend 是可切换的。除默认 MACE / MACE-LES teacher 外，仓库已包含 DeepMD DPA-4 teacher committee finetune 与 relabel 支持；切换时需要把 `committee_cycle` 中的 `teacher_committee_finetune.teacher_backend` 改为 `deepmd`，并指向 DPA-4 teacher 配置。
 
 当前示例顶层启动文件是：
 
@@ -79,7 +81,7 @@ MACE finetune 会优先查找：
 
 ### 2.2 Teacher finetune 基础数据
 
-当前 MACE teacher finetune 配置为：
+默认 MACE / MACE-LES teacher finetune 配置为：
 
 - [`configs/pipelines/committee_cycle/teacher_committee_finetune/mace/committee_finetune.json`](./configs/pipelines/committee_cycle/teacher_committee_finetune/mace/committee_finetune.json)
 
@@ -98,6 +100,25 @@ MACE finetune 会优先查找：
 - `user_assets/teacher_finetune/base.xyz`
 
 `training_data.base_datasets` 不接受 glob；如果要使用多个 teacher finetune 数据文件，应在配置里逐个列出裸文件名或绝对路径。
+
+### 2.2.1 DeepMD DPA-4 teacher 选项
+
+DPA-4 已接入 teacher backend，可作为 `committee_cycle` 的上游 teacher 使用。对应配置文件是：
+
+- [`configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json`](./configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json)
+- [`configs/pipelines/teacher_foundation_train/deepmd/dpa4/foundation_train.json`](./configs/pipelines/teacher_foundation_train/deepmd/dpa4/foundation_train.json)
+
+切换 committee-cycle teacher 时，把 pipeline 配置中的 teacher 段改为：
+
+```json
+"teacher_committee_finetune": {
+  "teacher_backend": "deepmd",
+  "config": "configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json",
+  "reuse_existing_committee": true
+}
+```
+
+DPA-4 teacher 仍复用 `user_assets/teacher_finetune/` 中的 base datasets 和历史 `user_assets/dft/rX/labeled.xyz` 数据；环境上需要 DeepMD `dp` 命令、DPA-4 模型支持，以及 relabel 时可用的 DeepMD/LAMMPS 能力。
 
 ### 2.3 Student 初始训练数据
 
@@ -293,7 +314,7 @@ backend 日志通常写到同级或下级的 `backend_logs/` 目录。
 
 ## 4. 配置文件结构与语义
 
-当前 release 使用 pipeline-template 模式。配置链是：
+release 使用 pipeline-template 模式。配置链是：
 
 1. 顶层 YAML
 2. `configs/pipelines/committee_cycle/pipeline.json`
@@ -361,9 +382,9 @@ committee_cycle:
 字段语义：
 
 - `teacher_committee_finetune.teacher_backend`
-  - 当前正式配置为 `mace`
+  - 默认示例为 `mace`；也支持 `deepmd`，用于 DeepMD DPA-4 teacher
 - `teacher_committee_finetune.config`
-  - MACE teacher finetune 配置文件路径
+  - teacher finetune 配置文件路径，需与 `teacher_backend` 匹配
 - `teacher_committee_finetune.reuse_existing_committee`
   - 如果当前 round 的 teacher committee 已完整存在，则复用已有模型
 - `student_subworkflow.config`
@@ -389,6 +410,33 @@ committee_cycle:
   - 可选；未指定时自动从 `user_assets/foundation_models/` 查找 model
 - `mace.*`
   - MACE 原生训练参数，例如 `batch_size`、`max_num_epochs`、`lr`、`device` 等
+
+### 4.3.1 DeepMD DPA-4 teacher 配置
+
+文件：
+
+- [`configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json`](./configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json)
+
+关键字段：
+
+- `workflow.model_family`
+  - 当前为 `dpa4`
+- `workflow.init_mode`
+  - 当前示例为 `scratch`
+- `workflow.teacher_num`
+  - DPA-4 teacher committee 成员数
+- `workflow.teacher_seeds`
+  - 每个 teacher 成员使用的随机种子
+- `workflow.type_map`
+  - 元素顺序，当前为 `H, O, Pt`
+- `workflow.training_data.base_datasets`
+  - teacher 训练基础数据，默认从 `user_assets/teacher_finetune/` 解析
+- `deepmd.model`
+  - DeepMD DPA-4 模型结构配置
+- `deepmd.training`
+  - DeepMD 原生训练配置
+
+当上游 teacher backend 为 `deepmd` 时，student relabel stage 会继承该 teacher backend；relabel 配置中如果显式写 `teacher_backend`，必须与上游 `teacher_committee_finetune.teacher_backend` 一致。
 
 ### 4.4 DeepMD student subworkflow 配置
 

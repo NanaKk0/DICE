@@ -1,10 +1,12 @@
 # DICE
 
 `DICE (Distillation-driven Co-Evolution)` is a closed-loop active-learning
-workflow for machine-learning force fields. The release workflow uses a
-teacher-guided, student-driven loop: a MACE teacher committee labels and filters
-candidate structures, while a DeepMD student committee performs low-cost
-sampling and uncertainty screening.
+workflow for machine-learning force fields. The shipped workflow uses a
+teacher-guided, student-driven loop: by default a MACE / MACE-LES teacher
+committee labels and filters candidate structures, while a DeepMD student
+committee performs low-cost sampling and uncertainty screening. DeepMD DPA-4 is
+also supported as an upstream teacher backend through the
+`teacher_backend = "deepmd"` configuration path.
 
 This repository is the `v0.1.0` release surface. It contains the runnable
 workflow code, example pipeline configuration, user asset directories, and the
@@ -16,8 +18,17 @@ The formal top-level workflow is:
 
 - `workflow.py`
   - `committee_cycle`
-    - MACE teacher committee finetune
+    - MACE / MACE-LES teacher committee finetune by default
     - DeepMD active-learning student subworkflow
+
+The teacher backend is configurable. The default example uses:
+
+- [`configs/pipelines/committee_cycle/teacher_committee_finetune/mace/committee_finetune.json`](./configs/pipelines/committee_cycle/teacher_committee_finetune/mace/committee_finetune.json)
+
+The release also ships a DeepMD DPA-4 teacher option:
+
+- [`configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json`](./configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json)
+- [`configs/pipelines/teacher_foundation_train/deepmd/dpa4/foundation_train.json`](./configs/pipelines/teacher_foundation_train/deepmd/dpa4/foundation_train.json)
 
 The example top-level workflow file is:
 
@@ -99,7 +110,7 @@ Workflow outputs are written to:
 
 ## Release Notes
 
-This release branch is intentionally focused on the MACE-teacher plus DeepMD
-student mainline. Several backend directories contain broader infrastructure
-that is useful for development or later extension, but the supported operating
-path for this release is the `committee_cycle` workflow described above.
+The default example remains the MACE / MACE-LES teacher plus DeepMD student
+mainline. DPA-4 teacher training and relabeling are part of the supported
+teacher backend surface, and are selected by switching the committee-cycle
+teacher backend and config path.

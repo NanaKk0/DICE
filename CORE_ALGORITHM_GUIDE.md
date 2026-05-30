@@ -1,8 +1,8 @@
 # DICE 核心算法导引
 
-`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。当前 `v0.1.0` release 主线使用 MACE / MACE-LES teacher committee 提供高质量标注与候选分流，使用 DeepMD student committee 执行低成本采样、不确定度评估和持续训练。
+`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。当前 `v0.1.0` release 默认主线使用 MACE / MACE-LES teacher committee 提供高质量标注与候选分流，使用 DeepMD student committee 执行低成本采样、不确定度评估和持续训练。DeepMD DPA-4 已作为上游 teacher backend 接入，可替代默认 MACE teacher committee。
 
-这份文档只说明当前主线的算法结构和阶段衔接，不讨论服务器启动、日志查看、同步命令或图像展示细节。
+本文聚焦算法结构和阶段衔接；启动、日志和环境细节见用户手册与环境依赖说明。
 
 当前正式顶层主线是：
 
@@ -22,25 +22,36 @@
 ## 1. 总体算法流程
 
 ```mermaid
-flowchart TD
-    A["用户输入<br/>foundation model / teacher_finetune base datasets<br/>student_initial / initial seed pool<br/>historical labeled DFT"] --> B["teacher committee finetune<br/>训练 MACE teacher committee"]
-    B --> C["entry relabel<br/>teacher 标注 initial student input"]
-    C --> D["entry train<br/>训练初始 DeepMD student committee"]
-    D --> E["long sampling<br/>少量高不确定 seed + 较长 MD"]
-    E --> F["student relabel input filtering<br/>按 system 控制 candidate / failed 数量"]
-    F --> G["teacher relabel<br/>生成 train.xyz / dft.xyz / discard.xyz"]
-    G --> H["continuation train<br/>从上一 student committee 继续训练"]
-    H --> I["seed_pool_refresh<br/>重评分并更新 seed pool"]
-    I --> J["short cycles<br/>更多 seed + 较短 MD + 继续修补"]
+flowchart LR
+    DFT["historical labeled DFT<br/>+ teacher base datasets"] --> T["teacher committee finetune<br/>MACE / MACE-LES or DPA-4"]
+    T --> R["teacher relabel<br/>train.xyz / dft.xyz / discard.xyz"]
+
+    INIT["initial student inputs"] --> R
+    R --> TRAIN["train.xyz<br/>student train / continuation train"]
+    TRAIN --> S["student committee"]
+
+    SEED["seed pool"] --> MD["sampling<br/>LAMMPS + student committee"]
+    S --> MD
+    MD --> FILTER["student uncertainty routing<br/>+ relabel input filtering"]
+    FILTER --> R
+
+    R --> CAND["dft.xyz<br/>DFT candidates"]
+    CAND --> EXT["external DFT labeling"]
+    EXT --> DFT
+
+    FILTER --> REFRESH["seed_pool_refresh<br/>rescore + rotate seeds"]
+    S --> REFRESH
+    REFRESH --> SEED
 ```
 
 这条主线的核心思想可以概括为：
 
 - 用 `teacher committee` 负责高质量标注、均值标签生成和 DFT candidate 分流；
 - 用 `student committee` 负责低成本 MD 采样和不确定度路由；
-- 用 `entry / long_cycle / short_cycle` 把算法拆成显式 stage，而不是隐藏在固定 round loop 里；
+- 用 `teacher relabel -> student train -> sampling -> filtering -> teacher relabel` 构成 student active-learning 内循环；
 - 用 `seed pool` 保存、重评分和轮换难点结构；
-- 用外部 DFT 回灌把 teacher 仍不确定的结构转化为下一轮 teacher finetune 的高质量数据。
+- 用外部 DFT 回灌把 teacher 仍不确定的结构转化为下一轮 teacher finetune 的高质量数据，形成 outer round 回路；
+- 用 `entry / long_cycle / short_cycle` 把内循环拆成显式 stage，而不是隐藏在固定 round loop 里。
 
 ---
 
@@ -48,7 +59,7 @@ flowchart TD
 
 ### 2.1 角色
 
-`teacher committee` 是一组 MACE teacher 模型。它的职责不是大规模采样，而是：
+`teacher committee` 是一组高精度 teacher 模型。默认示例使用 MACE / MACE-LES；同一套 teacher backend 接口也支持 DeepMD DPA-4 teacher。它的职责不是大规模采样，而是：
 
 - 对输入结构做 committee 标注；
 - 计算 teacher 间的力预测分歧；
@@ -59,12 +70,17 @@ flowchart TD
 
 - [`workflow_core/teacher/committee_finetune.py`](./workflow_core/teacher/committee_finetune.py)
 - [`workflow_backends/teacher/mace/finetune.py`](./workflow_backends/teacher/mace/finetune.py)
+- [`workflow_backends/teacher/deepmd/finetune.py`](./workflow_backends/teacher/deepmd/finetune.py)
 
 当前标注入口在：
 
 - [`workflow_core/labeling/task.py`](./workflow_core/labeling/task.py)
 - [`workflow_core/labeling/service.py`](./workflow_core/labeling/service.py)
 - [`workflow_core/labeling/routing.py`](./workflow_core/labeling/routing.py)
+
+teacher backend 由 `committee_cycle` 配置中的 `teacher_committee_finetune.teacher_backend` 决定。默认配置为 `mace`；DPA-4 teacher 使用 `deepmd`，配置入口是：
+
+- [`configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json`](./configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json)
 
 ### 2.2 训练数据来源
 
@@ -82,7 +98,7 @@ flowchart TD
 
 - `runs/<run_name>/artifacts/teacher_round_XXX/committee_cycle/teacher_committee_finetune/input/merged.xyz`
 
-teacher committee 的作用不是从零训练一个全新势，而是在已有 foundation model 基础上，用项目当前累计的高质量数据得到一个面向本体系的 teacher ensemble。
+默认 MACE / MACE-LES teacher 的作用是在已有 foundation model 基础上，用项目当前累计的高质量数据得到一个面向本体系的 teacher ensemble。DPA-4 teacher 路径也复用相同的数据合并策略；当前示例配置为 scratch 初始化，也可以通过 DeepMD teacher 配置扩展为匹配本地模型来源的训练方式。
 
 ### 2.3 输出形式
 
@@ -97,6 +113,8 @@ teacher committee 输出目录是：
 - `teacher_03/`
 
 committee 规模由 `workflow.teacher_num` 决定。当前示例配置为 3 个 teacher，随机种子来自 `workflow.teacher_seeds`。
+
+DPA-4 teacher committee 采用相同的成员目录和 committee 规模语义。训练产物由 DeepMD backend 发布，根目录下会写入 DeepMD teacher metadata，后续 relabel 用它识别 `model_family = "dpa4"` 和 `type_map`。
 
 ### 2.4 标注与分流算法
 
@@ -129,6 +147,8 @@ committee 规模由 `workflow.teacher_num` 决定。当前示例配置为 3 个 
 - 把 teacher 已经足够稳定的结构交给 student 训练；
 - 把 teacher 仍不确定的结构留作 DFT candidate；
 - 把明显不合理或超出约束的结构丢弃。
+
+当上游 teacher backend 为 DeepMD DPA-4 时，student pipeline 中的 relabel stage 会继承 `teacher_committee_finetune.teacher_backend = "deepmd"`。DPA-4 relabel 默认使用 LAMMPS engine 执行 DeepMD 模型推理；如果 stage 配置显式写 `teacher_backend`，必须与上游 teacher backend 一致。
 
 ---
 
@@ -504,7 +524,7 @@ long / short cycle 中的 train stage 使用：
 - [`workflow_core/student_pipeline/stages/teacher_dft_candidate_filtering_stage.py`](./workflow_core/student_pipeline/stages/teacher_dft_candidate_filtering_stage.py)
 - [`workflow_core/first_principles/`](./workflow_core/first_principles/)
 
-但这些能力需要在 schedule 和环境中显式启用；它们不应被描述为当前 shipped mainline 的默认闭环步骤。
+这些能力需要在 schedule 和环境中显式启用；默认 shipped mainline 采用外部 DFT 回灌，不把它们作为必经闭环步骤。
 
 ---
 

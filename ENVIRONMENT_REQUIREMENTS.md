@@ -1,8 +1,8 @@
 # DICE 环境依赖说明
 
-`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。当前 `v0.1.0` release 主线使用 MACE / MACE-LES teacher committee 做高质量标注与候选分流，使用 DeepMD student committee 和 LAMMPS 做采样、不确定度评估与持续训练。
+`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。当前 `v0.1.0` release 默认主线使用 MACE / MACE-LES teacher committee 做高质量标注与候选分流，使用 DeepMD student committee 和 LAMMPS 做采样、不确定度评估与持续训练。DeepMD DPA-4 也已接入 teacher backend，可作为上游 teacher committee 使用。
 
-这份文档说明当前仓库运行所需要的环境能力。它不是一键安装脚本，也不要求用户复刻历史服务器环境。它的目标是说明：
+本文说明当前仓库运行所需要的环境能力，重点覆盖：
 
 - 当前正式主线必须具备哪些软件能力；
 - 哪些能力只在特定后端或扩展路径下需要；
@@ -12,18 +12,19 @@
 
 ## 1. 适用范围
 
-当前仓库的正式主线是：
+默认示例主线是：
 
 - 顶层 [`workflow.py`](./workflow.py)
   - `committee_cycle`
-    - MACE teacher committee finetune
+    - MACE / MACE-LES teacher committee finetune
     - DeepMD student pipeline stages
     - LAMMPS sampling
 
-因此，这份依赖说明主要覆盖：
+依赖范围主要覆盖：
 
 - workflow 顶层调度；
 - MACE / MACE-LES teacher finetune 与 relabel；
+- DeepMD DPA-4 teacher finetune 与 relabel；
 - DeepMD student train / evaluate；
 - LAMMPS + DeepMD model deviation sampling；
 - 可选的 NEP / GPUMD student 路径；
@@ -90,6 +91,9 @@ Windows 可以用于编辑代码、整理文档和 Git 操作，但正式 workfl
 
 - `teacher_backend.mace.finetune`
 - `teacher_backend.mace.relabel`
+- `teacher_backend.deepmd.foundation_train`
+- `teacher_backend.deepmd.finetune`
+- `teacher_backend.deepmd.relabel`
 - `student_backend.deepmd.train`
 - `sampling_backend.lammps.sample`
 - `student_backend.nep.train`
@@ -187,6 +191,21 @@ DeepMD 环境必须提供：
 - LAMMPS sampling 前后的 DeepMD 模型组织。
 
 DeepMD 通常依赖 TensorFlow 或对应版本的运行时组件。用户需要保证 DeepMD、CUDA、驱动和 LAMMPS DeepMD plugin 之间版本兼容。
+
+### 6.1 DeepMD DPA-4 teacher 依赖
+
+当 teacher backend 切换为 DeepMD DPA-4 时，相关 role 是：
+
+- `teacher_backend.deepmd.foundation_train`
+- `teacher_backend.deepmd.finetune`
+- `teacher_backend.deepmd.relabel`
+
+对应配置文件包括：
+
+- [`configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json`](./configs/pipelines/committee_cycle/teacher_committee_finetune/deepmd/dpa4/committee_finetune.json)
+- [`configs/pipelines/teacher_foundation_train/deepmd/dpa4/foundation_train.json`](./configs/pipelines/teacher_foundation_train/deepmd/dpa4/foundation_train.json)
+
+DPA-4 teacher train / finetune 需要 `dp` 命令和支持 DPA-4 的 DeepMD 环境。DPA-4 teacher relabel 默认走 LAMMPS relabel engine，因此还需要可执行的 `lmp`、DeepMD LAMMPS plugin、`pair_style deepmd` 支持，以及匹配的 `LAMMPS_PLUGIN_PATH` / `LD_LIBRARY_PATH`。
 
 ---
 
@@ -396,9 +415,9 @@ DeepMD + LAMMPS 环境中常见需要设置：
 
 ---
 
-## 13. 这份文档不要求什么
+## 13. 非默认依赖边界
 
-这份仓库不要求用户：
+默认主线不要求用户：
 
 - 机械照搬旧的 `build_env.sh`；
 - 使用固定的历史 conda 环境名；
