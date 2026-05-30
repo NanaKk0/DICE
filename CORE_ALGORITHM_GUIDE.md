@@ -1,14 +1,21 @@
-# DICE 核心算法文档
+# DICE 核心算法导引
 
-`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。它通过 `MACE / MACE-LES teacher committee` 将知识蒸馏给 `DeepMD student committee`，同时由 `DeepMD student committee` 通过采样探索新的结构分布，并将高价值结构反馈给教师模型继续学习。
+`DICE (Distillation-driven Co-Evolution)` 是一个面向机器学习势函数的闭环主动学习工作流。当前 `v0.1.0` release 主线使用 MACE / MACE-LES teacher committee 提供高质量标注与候选分流，使用 DeepMD student committee 执行低成本采样、不确定度评估和持续训练。
 
-这份文档说明当前正式工作流的核心算法设计。它不讨论服务器操作、日志查看、同步命令等使用细节，只说明当前主线在做什么，以及各个阶段之间如何衔接。
+这份文档只说明当前主线的算法结构和阶段衔接，不讨论服务器启动、日志查看、同步命令或图像展示细节。
 
 当前正式顶层主线是：
 
-- `committee_cycle`
-  - `MACE teacher committee finetune`
-  - `DP active-learning subworkflow`
+- `workflow.py`
+  - `committee_cycle`
+    - `teacher_committee_finetune`
+    - `student_pipeline` stages
+
+当前 student pipeline 不是旧版固定 `dp_r0 / dp_r1 / dp_r2...` 循环，而是由 `student_pipeline_schedule` 展开为一串具体 stage：
+
+- `entry` template 执行 1 次
+- `long_cycle` template 执行 1 次
+- `short_cycle` template 执行 3 次
 
 ---
 
@@ -16,81 +23,84 @@
 
 ```mermaid
 flowchart TD
-    A["基础输入数据<br/>physical / RGPS / 历史 labeled DFT / seed pool"] --> B["teacher committee finetune<br/>训练 MACE teacher_xx"]
-    B --> C["teacher committee labeling<br/>得到 train.xyz 与 dft.xyz"]
-    C --> D["student committee dp_r0<br/>bootstrap 或 finetune"]
-    D --> E["seed pool 初始化或重标定"]
-    E --> F{"dp_round >= 1"}
-    F --> G["按长轮或短轮策略选 seed"]
-    G --> H["LAMMPS + student committee 采样"]
-    H --> I["按不确定度路由<br/>accurate / candidate / failed"]
-    I --> J["candidate 子集进入 teacher labeling"]
-    J --> K["生成 train.xyz / dft.xyz / discard.xyz"]
-    K --> L["student committee 持续训练"]
-    L --> M["seed pool 更新"]
-    K --> N["DFT screening"]
-    M --> F
+    A["用户输入<br/>foundation model / teacher_finetune base datasets<br/>student_initial / initial seed pool<br/>historical labeled DFT"] --> B["teacher committee finetune<br/>训练 MACE teacher committee"]
+    B --> C["entry relabel<br/>teacher 标注 initial student input"]
+    C --> D["entry train<br/>训练初始 DeepMD student committee"]
+    D --> E["long sampling<br/>少量高不确定 seed + 较长 MD"]
+    E --> F["student relabel input filtering<br/>按 system 控制 candidate / failed 数量"]
+    F --> G["teacher relabel<br/>生成 train.xyz / dft.xyz / discard.xyz"]
+    G --> H["continuation train<br/>从上一 student committee 继续训练"]
+    H --> I["seed_pool_refresh<br/>重评分并更新 seed pool"]
+    I --> J["short cycles<br/>更多 seed + 较短 MD + 继续修补"]
 ```
 
 这条主线的核心思想可以概括为：
 
-- 用 `teacher committee` 负责高质量标注与筛分；
-- 用 `student committee` 负责低成本大规模采样与不确定度评估；
-- 用 `长轮 + 短轮` 的采样调度在“探索新区域”和“反复打磨难点”之间切换；
-- 用 `seed pool` 把难点结构持续保存在工作流内部；
-- 用 `DFT screening` 控制最终需要进入高成本 DFT 阶段的结构规模与多样性。
+- 用 `teacher committee` 负责高质量标注、均值标签生成和 DFT candidate 分流；
+- 用 `student committee` 负责低成本 MD 采样和不确定度路由；
+- 用 `entry / long_cycle / short_cycle` 把算法拆成显式 stage，而不是隐藏在固定 round loop 里；
+- 用 `seed pool` 保存、重评分和轮换难点结构；
+- 用外部 DFT 回灌把 teacher 仍不确定的结构转化为下一轮 teacher finetune 的高质量数据。
 
 ---
 
 ## 2. Teacher Committee
 
-## 2.1 角色
+### 2.1 角色
 
 `teacher committee` 是一组 MACE teacher 模型。它的职责不是大规模采样，而是：
 
 - 对输入结构做 committee 标注；
-- 计算 teacher 间的分歧；
-- 把结构分流到：
-  - `train.xyz`
-  - `dft.xyz`
-  - `discard.xyz`
+- 计算 teacher 间的力预测分歧；
+- 用 committee 均值生成 energy / forces / stress 标签；
+- 把结构分流到 `train.xyz`、`dft.xyz` 和 `discard.xyz`。
 
-当前正式实现中，teacher committee 的训练入口在：
+当前训练入口在：
 
-- [workflow_core/mace/committee_finetune.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\mace\committee_finetune.py)
+- [`workflow_core/teacher/committee_finetune.py`](./workflow_core/teacher/committee_finetune.py)
+- [`workflow_backends/teacher/mace/finetune.py`](./workflow_backends/teacher/mace/finetune.py)
 
-teacher committee 的使用入口在：
+当前标注入口在：
 
-- [workflow_core/labeling/task.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\labeling\task.py)
-- [workflow_core/labeling/label.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\labeling\label.py)
+- [`workflow_core/labeling/task.py`](./workflow_core/labeling/task.py)
+- [`workflow_core/labeling/service.py`](./workflow_core/labeling/service.py)
+- [`workflow_core/labeling/routing.py`](./workflow_core/labeling/routing.py)
 
-## 2.2 Teacher Committee 的训练数据来源
+### 2.2 训练数据来源
 
-每个 `outer_round` 的 teacher finetune 数据由以下几部分合并而成：
+每个 `outer_round` 的 teacher finetune 数据由两部分合并而成：
 
-- `physical` 数据
-- 可选 `RGPS` 基础数据
-- 历史各轮已经完成的 `labeled DFT` 数据
+- 配置中声明的 `workflow.training_data.base_datasets`
+  - 默认从 `user_assets/teacher_finetune/` 解析
+  - 当前 release 示例是 `base.xyz`
+- 历史 labeled DFT 数据
+  - `user_assets/dft/r0/labeled.xyz`
+  - `user_assets/dft/r1/labeled.xyz`
+  - 依此类推，只读取当前 `outer_round` 之前的轮次
 
-合并后的数据写成一个统一的 `train_merged.xyz`，再据此训练多份 teacher 模型。
+合并后的训练输入写到当前 round 的 teacher finetune artifact 中：
 
-因此，teacher committee 的作用不是从零训练一个全新势，而是在：
+- `runs/<run_name>/artifacts/teacher_round_XXX/committee_cycle/teacher_committee_finetune/input/merged.xyz`
 
-- 既有 foundation model 的基础上，
-- 用当前项目累计下来的高质量数据，
-- 得到一个面向本项目体系的 teacher ensemble。
+teacher committee 的作用不是从零训练一个全新势，而是在已有 foundation model 基础上，用项目当前累计的高质量数据得到一个面向本体系的 teacher ensemble。
 
-## 2.3 Teacher Committee 的输出形式
+### 2.3 输出形式
 
-teacher committee 输出目录的逻辑形式是：
+teacher committee 输出目录是：
 
-- `runs/<run_name>/results/mace_committee_model/r<outer_round>/teacher_xx/`
+- `runs/<run_name>/artifacts/teacher_round_XXX/committee_cycle/teacher_committee_finetune/`
 
-每个 `teacher_xx` 是一个独立 teacher 成员。整个 committee 的规模由 `teacher_num` 决定。
+常见成员目录是：
 
-## 2.4 Teacher Committee 的标注算法
+- `teacher_01/`
+- `teacher_02/`
+- `teacher_03/`
 
-在 teacher labeling 阶段，同一个结构会被所有 teacher 模型分别计算：
+committee 规模由 `workflow.teacher_num` 决定。当前示例配置为 3 个 teacher，随机种子来自 `workflow.teacher_seeds`。
+
+### 2.4 标注与分流算法
+
+在 teacher relabel 阶段，同一个结构会被所有 teacher 模型分别计算：
 
 - energy
 - forces
@@ -98,540 +108,423 @@ teacher committee 输出目录的逻辑形式是：
 
 然后：
 
-- 用各 teacher 的平均值作为最终标签；
-- 用各 teacher 力预测的分散程度作为 `force_uncertainty`。
+- energy / forces / stress 使用 committee 均值作为最终标签；
+- teacher 间的 forces 分散程度用于计算 `force_uncertainty`。
 
-当前实现中，teacher uncertainty 的核心定义是：
+当前 teacher uncertainty 的核心定义是：
 
-- 对每个原子先计算不同 teacher 力预测的标准差；
-- 再取全结构最大原子不确定度作为该结构的不确定度。
+1. 对每个原子，计算不同 teacher 力预测相对均值的均方偏差；
+2. 得到每个原子的 force std；
+3. 取全结构最大原子 std 作为该结构的 `force_uncertainty`。
 
-随后用 `candidate_sigma_threshold` 把结构分成两类：
+分流逻辑在 [`workflow_core/labeling/routing.py`](./workflow_core/labeling/routing.py)：
 
-- `uncertainty < threshold`
-  - 进入 `train.xyz`
-- `uncertainty >= threshold`
-  - 进入 `dft.xyz`
-
-当前 teacher labeling 中：
-
-- `discard.xyz` 这条通路默认关闭，主要仍由 `train.xyz` 和 `dft.xyz` 两类承担分流。
+- 非法结构或超过 `max_force` 的结构进入 `discard.xyz`；
+- `force_uncertainty < teacher_trust_lo` 的结构进入 `train.xyz`；
+- 其余结构进入 `dft.xyz`；
+- 如果配置了 `teacher_trust_hi`，高于该上界的结构也可以进入 discard 路径。
 
 这意味着 teacher committee 的核心任务是：
 
-- 把“已经足够稳定、可直接进入 DP 训练”的结构留在 `train.xyz`
-- 把“teacher 仍然不够确定”的结构送入后续 DFT 候选池
+- 把 teacher 已经足够稳定的结构交给 student 训练；
+- 把 teacher 仍不确定的结构留作 DFT candidate；
+- 把明显不合理或超出约束的结构丢弃。
 
 ---
 
 ## 3. Student Committee
 
-## 3.1 角色
+### 3.1 角色
 
 `student committee` 是一组 DeepMD student 模型。它的职责是：
 
-- 在大量结构上进行快速推理；
-- 作为采样阶段的低成本 committee；
-- 为每个采样帧计算不确定度；
-- 决定哪些结构已经足够准确，哪些需要继续训练，哪些应升级为高不确定度候选。
+- 在 MD 采样中快速计算结构；
+- 基于 committee model deviation 给采样帧打不确定度；
+- 将采样帧路由为 accurate / candidate / failed；
+- 为下一轮 teacher relabel、student train 和 seed pool refresh 提供输入。
 
-当前正式实现的训练入口在：
+当前 DeepMD backend 入口在：
 
-- [workflow_core/dp/train_committee.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\dp\train_committee.py)
+- [`workflow_backends/student/deepmd/backend.py`](./workflow_backends/student/deepmd/backend.py)
+- [`workflow_backends/student/deepmd/training.py`](./workflow_backends/student/deepmd/training.py)
+- [`workflow_backends/student/deepmd/sampling.py`](./workflow_backends/student/deepmd/sampling.py)
 
-采样入口在：
+当前 pipeline stage 入口在：
 
-- [workflow_core/dp/sample_committee.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\dp\sample_committee.py)
+- [`workflow_core/student_pipeline/stages/train_stage.py`](./workflow_core/student_pipeline/stages/train_stage.py)
+- [`workflow_core/student_pipeline/stages/sampling_stage.py`](./workflow_core/student_pipeline/stages/sampling_stage.py)
 
-## 3.2 Student Committee 的训练方式
+### 3.2 训练方式
 
-student committee 不是单模型训练，而是多成员独立训练：
+student committee 是多成员独立训练：
 
-- 每个成员有自己的 `model_seed`
-- 每个成员有自己的训练目录
-- 每个成员最终产出一个 `graph.pb`
+- committee size 来自 `student_model.committee_size`；
+- 每个成员使用 `deepmd.training.model_seeds` 中的不同 seed；
+- 每个成员有独立训练目录；
+- 训练结束后发布到 stage 的 `student_committee/` 目录；
+- stage 同时写出 `student_committee_summary.json`。
 
-训练完成后，工作流会汇总出一个 `summary.json`，其中记录：
+只有成功完成并被 summary 记录的 student 成员会被后续 sampling stage 使用。
 
-- committee 大小
-- 成功成员
-- 各成员输出路径
-- 各成员训练结果
+### 3.3 不确定度定义
 
-只有成功完成的 student 成员会被用于后续采样。
-
-## 3.3 Student Committee 的不确定度定义
-
-当前正式主线中，student committee 的核心不确定度指标是：
+当前 student committee 的核心不确定度指标是：
 
 - `force_std_max`
 
-其定义是：
+定义是：
 
 1. 对同一帧，所有 student 成员分别计算力；
 2. 对每个原子，计算该原子在不同模型间的力分散；
 3. 取所有原子中的最大值，作为该帧的 `force_std_max`。
 
-当前实现位置在：
+相关实现位置：
 
-- [workflow_backends/deepmd/uncertainty.py](C:\Users\1\Desktop\mlff_workflow\workflow_backends\deepmd\uncertainty.py)
+- [`workflow_backends/student/deepmd/uncertainty.py`](./workflow_backends/student/deepmd/uncertainty.py)
+- [`workflow_backends/lammps/model_devi_parser.py`](./workflow_backends/lammps/model_devi_parser.py)
 
-这个指标直接决定采样帧的分类与 seed pool 的重标定结果。
+该指标直接决定采样帧的路由，也参与 seed selection 和 seed pool refresh。
 
 ---
 
-## 4. 长短轮采样策略
+## 4. Student Pipeline Schedule
 
-## 4.1 总体调度
+### 4.1 从旧 round loop 到显式 stage schedule
 
-当前正式配置的采样调度模式是：
+当前 release 的 student active learning 由 `subworkflow.json` 中的 `student_pipeline_schedule` 决定：
 
-- `long_first_then_short`
+```json
+[
+  {"template": "entry", "repeat": 1},
+  {"template": "long_cycle", "repeat": 1},
+  {"template": "short_cycle", "repeat": 3}
+]
+```
 
-也就是：
+模板展开逻辑在：
 
-- `dp_r1` 使用长轮 `long_exploration`
-- `dp_r2` 及之后使用短轮 `short_refinement`
+- [`workflow_core/student_pipeline/orchestration/state_store.py`](./workflow_core/student_pipeline/orchestration/state_store.py)
+- [`workflow_core/student_pipeline/orchestration/template_loader.py`](./workflow_core/student_pipeline/orchestration/template_loader.py)
+- [`workflow_core/student/planning.py`](./workflow_core/student/planning.py)
 
-当前解析逻辑在：
+展开后，每个 template invocation 对应一个 `student_round_YYY`。每个 student round 由 template 中列出的 stage 顺序执行。
 
-- [workflow_core/dp/sampling_config.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\dp\sampling_config.py)
-- [workflow_core/dp/round_finalize.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\dp\round_finalize.py)
+### 4.2 entry template
 
-## 4.2 长轮的目标
+`entry` template 包含：
 
-长轮的目标是：
+- `relabel`
+- `train`
 
-- 用较少 seed
-- 跑较长轨迹
-- 用更多温度
-- 尽可能扩大探索范围
+算法含义是：
 
-当前正式长轮配置的核心特征是：
+1. 从 `initial_student_inputs` 取得初始结构；
+2. 使用当前 teacher committee 进行 relabel；
+3. 将 teacher 分流后的 `train.xyz` 作为 entry train 数据；
+4. 训练第一个 DeepMD student committee。
 
-- 每个 system 取 `1` 个 seed
-- 选种模式：
-  - `top_uncertainty_per_system`
-- 温度：
-  - `273 / 323 / 373`
-- MD 步数：
-  - `20000`
+当前配置中：
 
-长轮强调的是：
+- 初始输入来自 `user_assets/student_initial/bootstrap.xyz`；
+- entry train 使用 `stages/train/entry_train.json`；
+- `train_regime.use_foundation_model = false`，所以 entry train 从 scratch 开始。
 
-- 覆盖更大的结构空间；
-- 优先观察当前最不稳定、最需要探索的 seed；
-- 把新的 candidate 和 failed 结构补充进 seed pool。
+### 4.3 long_cycle template
 
-## 4.3 短轮的目标
+`long_cycle` template 包含：
 
-短轮的目标是：
+- `sampling`
+- `student_relabel_input_filtering`
+- `relabel`
+- `train`
+- `seed_pool_refresh`
 
-- 用较多 seed
-- 跑较短轨迹
-- 在已经发现的问题区域内做密集修补
+算法含义是：
 
-当前正式短轮配置的核心特征是：
+1. 从当前 seed pool 中按高不确定度选少量 seed；
+2. 使用 DeepMD student committee + LAMMPS 跑较长 MD；
+3. 将采样帧按 student 不确定度分为 candidate / failed 等输出；
+4. 对 candidate / failed 做每个 system 的数量控制；
+5. 交给 teacher committee relabel；
+6. 用 relabel 后的 `train.xyz` 继续训练 student committee；
+7. 用新 student committee 重评分并刷新 seed pool。
 
-- 每个 system 取 `15` 个 seed
-- 选种模式：
-  - `usage_then_uncertainty_per_system`
-- 温度：
-  - `273 / 373`
-- MD 步数：
-  - `1000`
+当前 long sampling 的核心配置是：
 
-短轮强调的是：
+- `selection_mode = top_uncertainty_per_system`
+- `n_seed_per_system = 1`
+- `temperature_schedule = [273, 323, 373]`
+- `steps = 20000`
 
-- 尽量覆盖更多当前 pool 内的难点 seed；
-- 控制单条轨迹长度；
-- 提高对局部难点区域的修正效率。
+long cycle 的目标是扩大探索范围，优先观察当前最不稳定的 seed。
 
-## 4.4 Student Committee 采样时如何路由帧
+### 4.4 short_cycle template
 
-当前正式采样主线中，每一帧按 student committee 的不确定度划分为：
+`short_cycle` template 与 `long_cycle` 的 stage 类型相同，但 sampling 和 refresh 策略不同。
+
+当前 short sampling 的核心配置是：
+
+- `selection_mode = usage_then_uncertainty_per_system`
+- `n_seed_per_system = 15`
+- `temperature_schedule = [273, 373]`
+- `steps = 1000`
+
+short cycle 的目标是：
+
+- 用更多 seed 覆盖已有 seed pool 内的难点；
+- 用较短轨迹降低单次采样成本；
+- 通过 `times_used` 轮换修补不同难点区域；
+- 持续用最新 teacher / student committee 改善局部问题。
+
+---
+
+## 5. Sampling 与帧路由
+
+### 5.1 LAMMPS sampling stage
+
+当前 DeepMD 主线使用 LAMMPS sampling backend。sampling stage 的核心输入是：
+
+- 最新成功 train stage 的 `student_committee_summary.json`；
+- 当前有效 seed pool；
+- 当前 stage 的 MD 配置；
+- 全局 student uncertainty 阈值。
+
+sampling stage 的核心输出是：
+
+- `seed_pool.xyz`
+  - 本次实际选中的 seed
+- `candidate.xyz`
+  - student committee 认为值得进入 teacher relabel 的候选
+- `failed.xyz`
+  - student committee 高不确定或采样失败相关结构
+- `seed_pool_after_sampling.xyz`
+  - 采样后带有使用状态更新的 seed pool successor
+
+### 5.2 帧路由规则
+
+当前主线用 `uncertainty.trust_lo` 和 `uncertainty.trust_hi` 控制 student 采样帧路由。示例配置为：
+
+- `trust_lo = 0.10`
+- `trust_hi = 0.40`
+
+路由语义是：
 
 - `accurate`
-  - `force_std_max < f_trust_lo`
+  - `force_std_max < trust_lo`
 - `candidate`
-  - `f_trust_lo <= force_std_max < f_trust_hi`
+  - `trust_lo <= force_std_max < trust_hi`
 - `failed_uncertainty`
-  - `force_std_max >= f_trust_hi`
+  - `force_std_max >= trust_hi`
 
-当前正式阈值通常是：
+`accurate` 帧主要进入统计；`candidate` 和 `failed` 会被后续 filtering、teacher relabel 或 seed pool refresh 使用。
 
-- `f_trust_lo = 0.10`
-- `f_trust_hi = 0.40`
+### 5.3 relabel input filtering
 
-因此，采样阶段的核心逻辑是：
+采样结束后，工作流不会把所有 candidate / failed 都送入 teacher relabel，而是先执行 `student_relabel_input_filtering`。
 
-- `accurate` 帧只计入统计，不再进入后续高成本环节；
-- `candidate` 帧进入候选集；
-- `failed_uncertainty` 帧表示明显高不确定区域，也会被单独保留。
+当前 shipped 配置使用：
 
-## 4.5 Candidate 如何进入下一轮训练
+- `selection_mode = random_per_system`
+- long cycle candidate cap: 每个 system 最多 1000
+- short cycle candidate cap: 每个 system 最多 700
+- failed cap: 每个 system 最多 3000
 
-采样结束后，工作流不会把所有 `candidate` 全部送入下一轮训练，而是先做一轮训练子集筛选。
+这样做的目的不是改变不确定度定义，而是控制 teacher relabel 的输入规模，并避免单个 system 的采样帧挤占全部预算。
 
-当前正式配置中：
+实现位置：
 
-- 长轮：
-  - `random_per_system`
-  - 每个 system 最多 `1000`
-- 短轮：
-  - `random_per_system`
-  - 每个 system 最多 `700`
-
-也就是说：
-
-- 采样阶段先尽量广泛保留 candidate；
-- 真正进入 teacher labeling 与后续 DP 增量训练的数据，会再做一次按 system 的子集抽取。
-
-这样做的作用是：
-
-- 避免单个 system 的 candidate 过多挤占训练配额；
-- 保持各 system 在训练集中的基本均衡。
+- [`workflow_core/student_pipeline/stages/student_relabel_input_filtering_stage.py`](./workflow_core/student_pipeline/stages/student_relabel_input_filtering_stage.py)
+- [`workflow_core/student_pipeline/services/filtering/student_relabel_input_filtering.py`](./workflow_core/student_pipeline/services/filtering/student_relabel_input_filtering.py)
 
 ---
 
-## 5. Seed Pool 初始化与更新策略
+## 6. Seed Pool 策略
 
-## 5.1 Seed Pool 的作用
+### 6.1 作用
 
-seed pool 是工作流内部维护的“下一轮采样初始结构池”。它的作用是：
+seed pool 是 student pipeline 内部维护的“下一次 sampling 初始结构池”。它的作用是：
 
-- 把已经发现的高价值结构持续保留下来；
-- 为后续长轮和短轮提供稳定的 seed 来源；
-- 记录每个 seed 被使用过多少次，以支持短轮的轮换修补策略。
+- 保存当前 workflow 认为仍有价值的结构；
+- 为 long / short sampling 提供稳定 seed 来源；
+- 保存 `force_std_max`、`system_id`、`structure_id`、`times_used` 等 metadata；
+- 让短轮可以在不同难点 seed 之间轮换。
 
-当前实现入口在：
+当前 seed pool 不是旧版 `seed_pool_policy.enabled` 控制的全局任务，而是由 stage artifact resolver 和 `seed_pool_refresh` stage 共同维护。
 
-- [workflow_core/seed_pool/service.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\seed_pool\service.py)
+相关实现：
 
-## 5.2 Seed Pool 初始化
+- [`workflow_core/student_pipeline/artifacts/successful_stage_resolver.py`](./workflow_core/student_pipeline/artifacts/successful_stage_resolver.py)
+- [`workflow_core/student_pipeline/stages/seed_pool_refresh_stage.py`](./workflow_core/student_pipeline/stages/seed_pool_refresh_stage.py)
+- [`workflow_policies/seed_selection.py`](./workflow_policies/seed_selection.py)
+- [`workflow_policies/seed_pool_refresh.py`](./workflow_policies/seed_pool_refresh.py)
 
-在 `seed_pool_policy.enabled = true` 且 `initialize_at_subworkflow_start = true` 时：
+### 6.2 初始化
 
-- 工作流开始进入 DP 子流程时，
-- 如果正式 seed pool 文件还不存在，
-- 就会执行一次初始化。
+初始 seed pool 来自 `subworkflow.json` 的：
 
-初始化后的每个结构都会带上基础 metadata，例如：
+```json
+"source": {
+  "initial_seed_pool": [
+    "initial_physical_seed.xyz"
+  ]
+}
+```
 
-- `system_id`
-- `structure_id`
-- `force_std_max`
-- `times_used = 0`
+默认解析到：
 
-这一步的目标是建立一个可持续更新的正式种子库。
+- `user_assets/seed_pool/initial_physical_seed.xyz`
 
-## 5.3 长轮和短轮的选种方式
+当 schedule 中存在 sampling 或 seed pool refresh stage 时，工作流会把初始 seed pool 快照到：
 
-当前正式主线采用两种选种逻辑。
+- `runs/<run_name>/artifacts/teacher_round_XXX/committee_cycle/student_subworkflow/source/initial_seed_pool.xyz`
 
-### 长轮选种
+### 6.3 选种策略
 
-按每个 system 内的：
+当前 long sampling 使用：
 
-- `force_std_max` 降序
+- `top_uncertainty_per_system`
 
-也就是优先选当前最不稳定、最值得探索的 seed。
+即每个 system 内优先选择 `force_std_max` 高的 seed。
 
-### 短轮选种
+当前 short sampling 使用：
 
-按每个 system 内的：
+- `usage_then_uncertainty_per_system`
 
-1. `times_used` 升序
-2. `force_std_max` 降序
+排序规则是：
 
-也就是：
+1. `times_used` 升序；
+2. `force_std_max` 降序。
 
-- 先优先使用最近较少被采样过的 seed；
-- 在使用次数相同的 seed 中，再优先挑最不稳定的 seed。
+这表示：
 
-这套策略的意义是：
+- long cycle 偏向“最大化探索”；
+- short cycle 偏向“轮换修补已有难点”。
 
-- 长轮偏向“最大化探索”
-- 短轮偏向“在所有难点之间轮换修补”
+### 6.4 refresh 策略
 
-## 5.4 短轮采样后的使用次数更新
+`seed_pool_refresh` stage 会使用最新 student committee 对输入 seed pool、candidate increment 和 failed increment 重新打分，再按策略筛选。
 
-当前正式主线中，只有短轮会在采样后更新正式 seed pool 的使用次数：
+当前 long refresh 配置：
 
-- 实际被选中并用于短轮采样的 seed
-- `times_used += 1`
+- `selection_mode = top_uncertainty_per_system`
+- `max_pool_size_per_system = 500`
+- `keep_if_lt_high = 0.40`
+- `dedup_enabled = true`
 
-因此：
+当前 short refresh 配置：
 
-- `times_used` 是短轮策略中的状态变量；
-- 它不是一个历史统计展示字段，而是直接参与下一轮短轮选种排序。
+- `selection_mode = usage_then_uncertainty_per_system`
+- `max_pool_size_per_system = 500`
+- `keep_if_lt_high = 0.40`
+- `dedup_enabled = true`
 
-## 5.5 训练后如何刷新 Seed Pool
+因此 refresh 的核心行为是：
 
-每次 student committee 训练结束后，如果 `refresh_after_training = true`，工作流会用当前 student committee 对 seed pool 重新打分。
-
-这里的“重新打分”指的是：
-
-- 用最新 student committee 重新计算 seed 的 `force_std_max`
-- 再按刷新模式决定如何保留和更新 pool
-
-当前正式主线有两种刷新模式。
-
-### 模式一：`merge_old_pool_with_current_candidate_failed`
-
-这是长轮默认模式。
-
-含义是：
-
-- 把旧 seed pool
-- 与当前轮新产生的 `candidate + failed` 结构
-- 合并后再重新筛选、重排并回写成新的 seed pool
-
-这是一种“扩池”模式，目标是：
-
-- 把这一轮新发现的难点立即并入正式 seed pool
-
-### 模式二：`rescore_existing_pool_only`
-
-这是短轮默认模式。
-
-含义是：
-
-- 不把当前轮新 candidate / failed 并回正式 seed pool
-- 只对当前 pool 中已有 seed 重新计算不确定度并重排
-
-这是一种“重打分”模式，目标是：
-
-- 不快速膨胀 seed pool
-- 只用最新 student committee 重新判断已有种子的优先级
-
-## 5.6 Outer Round 切换时的特殊规则
-
-当：
-
-- `outer_round > 0`
-- 且 `dp_r0` 完成训练后
-
-当前正式主线会对 seed pool 做一次特殊刷新：
-
-- 使用最新 student committee 重标定
-- `times_used = 0`
-
-它的作用是：
-
-- 把上一 outer round 中累积的短轮使用历史清空；
-- 让新 outer round 从“重新校准后的当前难点分布”开始选种。
+- 用新 student committee 更新 seed 的 `force_std_max`；
+- 过滤掉超过 high trust 的结构；
+- 按每个 system 的预算保留 seed；
+- 让后续 sampling 使用刷新后的 seed pool。
 
 ---
 
-## 6. DP 持续训练策略
+## 7. Student 持续训练策略
 
-## 6.1 总体目标
+### 7.1 train_regime
 
-student committee 的训练不是一轮一轮完全重来，而是持续积累、持续微调。
+当前配置：
 
-当前正式主线中，DP 训练策略可以概括为：
+```json
+"train_regime": {
+  "use_foundation_model": false,
+  "continue_training": true
+}
+```
 
-- `dp_r0` 负责建立当前 outer round 的起点 student committee
-- `dp_r1+` 负责在这个起点上持续 finetune
+其算法含义是：
 
-## 6.2 `dp_r0` 的两种来源
+- entry train 不使用 student foundation model，从 scratch 训练；
+- 后续 train stage 从前一个成功 student committee 继续训练；
+- 因为 `continue_training = true`，训练数据模式是 incremental。
 
-### `outer_round = 0`
+解析逻辑在：
 
-在最初 outer round 中：
+- [`workflow_core/student_pipeline/config/train_regime.py`](./workflow_core/student_pipeline/config/train_regime.py)
+- [`workflow_core/student_pipeline/artifacts/stage_artifacts.py`](./workflow_core/student_pipeline/artifacts/stage_artifacts.py)
 
-- `dp_r0` 是 bootstrap 阶段
-- 训练数据来自：
-  - `physical` 数据
-  - 可选 `RGPS` 数据
+### 7.2 entry train
 
-也就是，最早的 student committee 从基础数据直接建立。
+entry train 的输入来自前一个 relabel stage 的：
 
-### `outer_round > 0`
+- `label/train.xyz`
 
-在后续 outer round 中：
+训练 recipe 是：
 
-- `dp_r0` 不再从零 bootstrap
-- 而是先汇总前一 outer round 所有 `dft.xyz`
-- 用当前 teacher committee 重新标注这些候选
-- 再以此作为当前 outer round 的 round0 数据源
+- `stages/train/entry_train.json`
 
-同时：
+当前 entry train 的角色是建立本 outer round 的第一个 DeepMD student committee。
 
-- 当前 `dp_r0` 会从上一 outer round 的最终 student committee 继续训练
+### 7.3 continuation train
 
-这意味着每个新 outer round 的 `dp_r0` 是一次：
+long / short cycle 中的 train stage 使用：
 
-- “teacher 重新整理上一轮 DFT 候选”
-- 加上
-- “student 从上一轮最终模型继续 finetune”
+- `stages/train/continuation_train.json`
 
-## 6.3 `dp_r1+` 的持续训练方式
+当 `continue_training = true` 时，它会解析最近成功 train stage 的 student committee 作为 previous committee，并用当前 relabel stage 的增量 `train.xyz` 继续训练。
 
-在同一个 outer round 内：
+这意味着当前 student 演化链的核心特征是：
 
-- `dp_r1` 从 `dp_r0` 继续训练
-- `dp_r2` 从 `dp_r1` 继续训练
-- 依此类推
-
-当前正式策略中：
-
-- `later_round_stage = finetune`
-
-因此同一 outer round 内的后续 student committee 是连续微调关系，而不是完全独立训练。
-
-## 6.4 当前训练数据纳入方式
-
-当前正式配置中，DP 增量数据策略是：
-
-- `use_incremental_data_only = true`
-- `train_on_current_round_increment_only = true`
-
-它意味着：
-
-- 每个 `dp_round` 的训练根目录，当前只指向该轮自己的 `label_dir`
-- 工作流不会在每个 `dp_round` 自动把本 outer round 之前所有 `train.xyz` 再次全量拼回同一个训练根
-
-因此，当前正式 student 持续训练的主特点是：
-
-- 模型参数是持续传递的；
-- 训练数据按轮次增量进入；
-- 不是每轮都做一次全历史全集重训。
-
-## 6.5 架构锁定
-
-当 student committee 进入 `finetune` 阶段后，工作流会锁定结构超参数信息，并写入 `arch_meta.json`。
-
-其作用是：
-
-- 后续 round 的 student committee 必须与前一轮架构兼容；
-- 防止在持续训练过程中意外改变模型结构；
-- 保证 checkpoint 初始化和后续 freeze 输出的一致性。
-
-因此，当前 student committee 的持续训练不是“松散地复用旧模型”，而是：
-
-- 在固定结构下继续训练参数。
+- 模型参数跨 stage 延续；
+- 数据按 stage 增量进入；
+- 不是每个 student round 都把全历史训练集重新拼接后从零训练。
 
 ---
 
-## 7. DFT Screening 筛选策略
+## 8. 外部 DFT 回灌在算法中的位置
 
-## 7.1 角色
+当前 release 的 shipped DeepMD schedule 没有启用独立的 `teacher_dft_candidate_filtering` stage，因此 DFT screening 不是默认主线中的必经算法阶段。
 
-DFT screening 的目标不是再做一次 committee 标注，而是：
+默认主线中，teacher relabel 会输出：
 
-- 在已经进入 `dft.xyz` 的候选结构中
-- 控制最终进入高成本 DFT 池的规模
-- 同时尽量保留结构多样性和高不确定度代表
+- `label/train.xyz`
+  - teacher 足够确定，可用于 student train
+- `active_learning/dft.xyz`
+  - teacher 不够确定，应作为 DFT candidate
+- `label/discard.xyz`
+  - 不合法或超出约束的结构
 
-当前实现入口在：
+用户可以从各 relabel stage 的 `active_learning/dft.xyz` 中整理外部 DFT 输入。外部 DFT 完成后，将结果回灌到：
 
-- [workflow_core/dft/screening.py](C:\Users\1\Desktop\mlff_workflow\workflow_core\dft\screening.py)
+- `user_assets/dft/r<outer_round>/labeled.xyz`
 
-## 7.2 输入来源
+下一轮 `outer_round` 启动时，teacher finetune 会自动把这些 labeled DFT 数据纳入训练集。
 
-在当前 outer round 内，DFT screening 优先使用：
+代码库中仍包含 first-principles handoff 和 screening 相关基础设施，例如：
 
-- 当前 outer round 的累计 DFT candidate 池
+- [`workflow_policies/first_principles_screening/`](./workflow_policies/first_principles_screening/)
+- [`workflow_core/student_pipeline/stages/teacher_dft_candidate_filtering_stage.py`](./workflow_core/student_pipeline/stages/teacher_dft_candidate_filtering_stage.py)
+- [`workflow_core/first_principles/`](./workflow_core/first_principles/)
 
-如果累计池存在，就会优先对累计池做筛选；否则才退回当前轮 `dft.xyz`。
-
-因此，当前 DFT screening 不是只看“这一轮刚新增的候选”，而是更接近：
-
-- “对本 outer round 目前累计的 DFT 候选做统一筛选”
-
-## 7.3 筛选流程
-
-当前正式筛选主线是四段式：
-
-### 第一步：按 system 分组
-
-所有候选先按 system 分开处理，避免不同体系互相挤占预算。
-
-### 第二步：精确去重
-
-对每个 system 内的结构：
-
-- 根据元素、坐标、晶胞、PBC 等信息构造稳定 hash
-- 完全重复的结构只保留一个
-- 如果同一精确重复组中有多个结构，则优先保留不确定度更高的代表
-
-### 第三步：结构 bucket 去重
-
-对精确去重后的结构，继续构造邻域签名：
-
-- 取若干近邻阶数
-- 对每阶近邻距离取分位数
-- 再附加最小原子间距
-
-然后：
-
-- 做 robust normalization
-- 再按 `bucket_width` 离散成 bucket
-
-这样能够把“局部结构非常接近”的候选归到同一 bucket 中。
-
-### 第四步：每个 bucket 先保留高不确定度代表，再按 system 预算抽样
-
-在同一个 bucket 内：
-
-- 先按不确定度降序排列
-- 每个 bucket 先保留前 `keep_top_per_bucket` 层代表
-- 再在各 bucket 间按稳定随机种子做打散与填充
-- 最终每个 system 只保留不超过 `budget_per_system` 个候选
-
-因此，DFT screening 的核心目标不是单纯“挑最高不确定度的前 N 个”，而是：
-
-- 先保代表性
-- 再保高不确定度
-- 最后保 system 级预算均衡
-
-## 7.4 筛选后的输出
-
-DFT screening 会输出两层结果：
-
-- 当前 `dp_round` 的 `dft_screened.xyz`
-- 当前 outer round 的累计 `screened_dft_pool.xyz`
-
-所以它既有“本轮筛选结果”，也有“当前 outer round 截止目前的正式 screened pool”。
-
-## 7.5 DFT Screening 与停止条件
-
-当前正式配置中，DFT screening 还承担一个停止判据：
-
-- 如果本轮 screened 数量达到阈值；
-- 或当前 outer round 的累计 screened 数量达到阈值；
-
-则当前 DP 子流程可以提前停止。
-
-这意味着 DFT screening 不只是后处理，而是会直接影响：
-
-- 当前 outer round 是否继续进行更多 DP round。
+但这些能力需要在 schedule 和环境中显式启用；它们不应被描述为当前 shipped mainline 的默认闭环步骤。
 
 ---
 
-## 8. 当前正式主线的算法特征总结
+## 9. 当前主线的算法特征总结
 
-把整套主线压缩成一句话，可以概括为：
+把当前 release 主线压缩成一句话，可以概括为：
 
-- `teacher committee` 负责高质量标注与候选分流；
-- `student committee` 负责大规模不确定度采样与持续训练；
-- `长轮` 负责探索；
-- `短轮` 负责修补；
-- `seed pool` 负责保存和轮换难点结构；
-- `DFT screening` 负责把累计高不确定候选压缩成有限而多样的高价值 DFT 池。
+- teacher committee 负责可靠标注和 DFT candidate 分流；
+- student committee 负责低成本采样、不确定度路由和持续训练；
+- entry stage 建立第一个 student committee；
+- long cycle 负责少 seed、长轨迹的探索；
+- short cycle 负责多 seed、短轨迹的局部修补；
+- seed pool 负责保存和轮换难点结构；
+- 外部 DFT 回灌负责把 teacher 不确定的候选转化为下一轮 teacher finetune 数据。
 
-因此，这个工作流不是单纯地“采样 -> 训练 -> 再采样”，而是同时维护了两条耦合演化链：
+因此，当前工作流不是单纯的“采样 -> 训练 -> 再采样”，而是两条耦合演化链：
 
-- 一条是 `teacher committee` 驱动的高质量标签链；
-- 一条是 `student committee` 驱动的低成本持续探索链。
+- teacher chain
+  - foundation model + base datasets + historical labeled DFT -> teacher committee -> relabel / DFT candidate
+- student chain
+  - relabel train data + seed pool + sampling uncertainty -> student committee -> new candidate / refreshed seed pool
 
-这两条链通过：
-
-- `label/train/dft` 分流、
-- `seed pool`、
-- `DP round` 持续训练、
-- `DFT screening`
-
-共同推动整个体系逐步收敛。
+两条链通过 `train.xyz`、`dft.xyz`、`seed_pool.xyz` 和外部 DFT 回灌共同推动体系逐步收敛。
