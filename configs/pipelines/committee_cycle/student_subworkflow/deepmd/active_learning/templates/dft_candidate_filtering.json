@@ -1,0 +1,8 @@
+{
+  "stages": [
+    {
+      "stage": "teacher_dft_candidate_filtering",
+      "config": "../stages/teacher_dft_candidate_filtering/soap_direct_max20.json"
+    }
+  ]
+}

@@ -101,6 +101,8 @@ Windows 可以用于编辑代码、整理文档和 Git 操作，但正式 workfl
 
 这种方式适合把 MACE、DeepMD/LAMMPS、GPUMD/NEP 拆在不同环境中运行。每个 profile 的 `source_list` 脚本可以负责 conda activate、设置 `PATH`、`LD_LIBRARY_PATH`、cache 目录、plugin 路径等。
 
+需要注意：`environment_profile` 只作用于代码中明确绑定了 workflow role 的后端任务。未绑定 role 的 Python 阶段会继续在启动 `workflow.py` 的环境中运行，例如当前 `teacher_dft_candidate_filtering` 示例 stage 使用 SOAP + DIRECT 筛选，需要启动环境本身具备 `ase`、`dscribe`、`sklearn` 等依赖。
+
 示例 source 脚本位于：
 
 - [`configs/environments/scripts/mace-les.env.sh`](./configs/environments/scripts/mace-les.env.sh)

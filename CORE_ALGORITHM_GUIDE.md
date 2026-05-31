@@ -501,7 +501,7 @@ long / short cycle 中的 train stage 使用：
 
 ## 8. 外部 DFT 回灌在算法中的位置
 
-当前 release 的 shipped DeepMD schedule 没有启用独立的 `teacher_dft_candidate_filtering` stage，因此 DFT screening 不是默认主线中的必经算法阶段。
+当前 release 的 shipped DeepMD schedule 在 student subworkflow 最后追加了一个独立的 `teacher_dft_candidate_filtering` 示例 stage。该 stage 使用 SOAP 描述符和 DIRECT 算法，从 teacher DFT candidate 池中为每个 system 筛选最多 20 个结构。
 
 默认主线中，teacher relabel 会输出：
 
@@ -512,7 +512,7 @@ long / short cycle 中的 train stage 使用：
 - `label/discard.xyz`
   - 不合法或超出约束的结构
 
-用户可以从各 relabel stage 的 `active_learning/dft.xyz` 中整理外部 DFT 输入。外部 DFT 完成后，将结果回灌到：
+用户可以从最后一个 filtering stage 的 `screened_dft_candidates.xyz`，或从各 relabel stage 的 `active_learning/dft.xyz` 中整理外部 DFT 输入。外部 DFT 完成后，将结果回灌到：
 
 - `user_assets/dft/r<outer_round>/labeled.xyz`
 
@@ -524,7 +524,7 @@ long / short cycle 中的 train stage 使用：
 - [`workflow_core/student_pipeline/stages/teacher_dft_candidate_filtering_stage.py`](./workflow_core/student_pipeline/stages/teacher_dft_candidate_filtering_stage.py)
 - [`workflow_core/first_principles/`](./workflow_core/first_principles/)
 
-这些能力需要在 schedule 和环境中显式启用；默认 shipped mainline 采用外部 DFT 回灌，不把它们作为必经闭环步骤。
+默认 shipped mainline 仍采用外部 DFT 回灌：筛选 stage 负责准备候选结构，DFT 计算结果仍需要回灌到 `user_assets/dft/r<outer_round>/labeled.xyz` 后进入下一轮 teacher finetune。
 
 ---
 

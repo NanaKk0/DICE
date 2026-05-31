@@ -1,0 +1,27 @@
+{
+  "selection_mode": "direct",
+  "budget_per_system": 20,
+  "dedup": {
+    "exact": true
+  },
+  "direct": {
+    "soap": {
+      "species": ["H", "O", "Pt"],
+      "r_cut": 5.0,
+      "n_max": 4,
+      "l_max": 4,
+      "sigma": 0.5,
+      "periodic": true,
+      "sparse": false,
+      "dtype": "float32"
+    },
+    "direct": {
+      "selection_criteria": "center",
+      "use_explained_variance_weighting": false,
+      "birch_threshold": 0.5,
+      "birch_branching_factor": 50,
+      "birch_n_clusters": 1,
+      "random_state": 42
+    }
+  }
+}

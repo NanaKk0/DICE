@@ -29,7 +29,7 @@ python workflow.py Pt-water-interface_roundN.yaml
 nohup python workflow.py Pt-water-interface_roundN.yaml > logs/pt-water-interface_r1_1.log 2>&1 &
 ```
 
-运行前应先进入具备 MACE、DeepMD、LAMMPS 等能力的环境，并设置好 CUDA、线程、plugin 路径等本机环境变量。
+运行前应先进入具备 workflow 调度与通用 Python 处理能力的启动环境，并设置好 CUDA、线程、plugin 路径等本机环境变量。如果使用 `environment_profile`，只有明确绑定到 workflow role 的后端任务会切换到对应 profile；其他 Python 逻辑默认仍在启动 `workflow.py` 的环境中运行。
 
 默认示例主线是：
 
@@ -39,6 +39,8 @@ nohup python workflow.py Pt-water-interface_roundN.yaml > logs/pt-water-interfac
     - DeepMD active-learning student subworkflow
 
 teacher backend 是可切换的。除默认 MACE / MACE-LES teacher 外，仓库已包含 DeepMD DPA-4 teacher committee finetune 与 relabel 支持；切换时需要把 `committee_cycle` 中的 `teacher_committee_finetune.teacher_backend` 改为 `deepmd`，并指向 DPA-4 teacher 配置。
+
+启动环境需要包含所有不通过 `environment_profile` 独立切换的 Python 依赖。例如当前 DeepMD student subworkflow 末尾的 `teacher_dft_candidate_filtering` 示例 stage 直接在 workflow 启动环境中运行；它使用 SOAP + DIRECT，因此启动环境需要能 import `ase`、`dscribe` 和 `sklearn`。
 
 当前示例顶层启动文件是：
 
@@ -186,11 +188,11 @@ canonical 路径是：
 - `user_assets/dft/rX/import_manifest.json`
 - `user_assets/dft/rX/source_snapshot/`
 
-当前 shipped DeepMD schedule 没有启用独立的 `teacher_dft_candidate_filtering` stage。每个 relabel stage 会产生 teacher DFT candidate：
+当前 shipped DeepMD schedule 在 student subworkflow 最后追加了一个独立的 `teacher_dft_candidate_filtering` 示例 stage，使用 SOAP 描述符和 DIRECT 筛选每个 system 最多 20 个 teacher DFT candidate。每个 relabel stage 会产生 teacher DFT candidate：
 
 - `runs/<run_name>/artifacts/teacher_round_XXX/committee_cycle/student_subworkflow/student_round_YYY/stage_ZZ_relabel/active_learning/dft.xyz`
 
-用户可以从这些 `dft.xyz` 中整理外部 DFT 输入。外部 DFT 完成后，把本轮整理好的 `labeled.xyz` 放回：
+最终筛选结果会写到最后一个 filtering stage 的 `screened_dft_candidates.xyz`。用户可以从该文件，或从各 relabel stage 的 `dft.xyz` 中整理外部 DFT 输入。外部 DFT 完成后，把本轮整理好的 `labeled.xyz` 放回：
 
 - `user_assets/dft/r<当前 outer_round>/labeled.xyz`
 

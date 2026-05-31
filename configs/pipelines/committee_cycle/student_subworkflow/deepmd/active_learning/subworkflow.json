@@ -52,11 +52,13 @@
   "student_pipeline_templates": {
     "entry": "templates/entry.json",
     "long_cycle": "templates/long_cycle.json",
-    "short_cycle": "templates/short_cycle.json"
+    "short_cycle": "templates/short_cycle.json",
+    "dft_candidate_filtering": "templates/dft_candidate_filtering.json"
   },
   "student_pipeline_schedule": [
     {"template": "entry", "repeat": 1},
     {"template": "long_cycle", "repeat": 1},
-    {"template": "short_cycle", "repeat": 3}
+    {"template": "short_cycle", "repeat": 3},
+    {"template": "dft_candidate_filtering", "repeat": 1}
   ]
 }
