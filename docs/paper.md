@@ -16,5 +16,5 @@ the numerical analyses and per-figure commands for these research assets.
 
 Use the [native environment guide](native-models.md) to prepare scientific
 execution, or the CPU mock to explore the workflow. The Zenodo deposit comprises DICE-software.zip, DICE-paper.zip,
-DICE-models.zip and DICE-datasets.zip. Its reserved identifier is
+DICE-models.zip and DICE-datasets.zip. The archive identifier is
 [10.5281/zenodo.23885754](https://doi.org/10.5281/zenodo.23885754).
