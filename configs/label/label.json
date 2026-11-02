@@ -1,8 +1,0 @@
-{
-  "teacher_num": 3,
-  "mace_backend": "les",
-  "split_seed": 42,
-  "candidate_sigma_threshold": 0.10,
-  "max_force": 15.0,
-  "device": "cuda"
-}

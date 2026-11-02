@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dice-workflow"
+version = "0.1.0"
+description = "Distillation-driven co-evolution machine-learning force-field workflow"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy", "ase", "scipy", "PyYAML", "scikit-learn", "umap-learn", "matplotlib"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+dice = "workflow_app.entrypoint:console_main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["workflow_app*", "workflow_artifacts*", "workflow_backends*", "workflow_core*", "workflow_policies*", "workflow_runtime*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

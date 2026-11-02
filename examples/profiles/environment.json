@@ -1,0 +1,27 @@
+{
+  "schema": "dice.environment-profile",
+  "software_profiles": {
+    "mace": {
+      "environment": {"source_list": ["mace.env.sh"]},
+      "executables": {"mace_run_train": "mace_run_train", "python": "python"}
+    },
+    "deepmd-tf": {
+      "environment": {"source_list": ["deepmd.env.sh"]},
+      "executables": {"dp": "dp", "python": "python"}
+    },
+    "lammps-tf": {
+      "environment": {"source_list": ["lammps.env.sh"]},
+      "executables": {"lmp": "lmp", "python": "python"}
+    }
+  },
+  "bindings": {
+    "teacher.mace.train": "mace",
+    "teacher.mace.label": "mace",
+    "teacher.mace.gmm_reference": "mace",
+    "teacher.mace.gmm_score": "mace",
+    "student.deepmd.tf.train": "deepmd-tf",
+    "student.deepmd.tf.gmm_reference": "deepmd-tf",
+    "student.deepmd.tf.gmm_score": "deepmd-tf",
+    "sampler.lammps.tf": "lammps-tf"
+  }
+}

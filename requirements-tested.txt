@@ -1,0 +1,10 @@
+# Control-plane CPU acceptance on Python 3.10.20; not a native-engine environment.
+numpy==1.26.4
+scipy==1.15.3
+ase==3.28.0
+PyYAML==6.0.3
+scikit-learn==1.7.2
+umap-learn==0.5.7
+matplotlib==3.10.9
+joblib==1.5.3
+pytest==9.0.3

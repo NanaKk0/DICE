@@ -1,0 +1,14 @@
+{
+  "schema": "dice.execution-profile",
+  "targets": {"local": {"adapter": "local", "max_in_flight": 1}},
+  "target_pools": {"local": {"targets": ["local"]}},
+  "resource_classes": {
+    "cpu": {
+      "mode": "pool", "nodes": 1, "processes_per_node": 1,
+      "gpus_per_node": 0, "cpus_per_process": 1,
+      "memory_mb": 2048, "wall_time_seconds": 600,
+      "launcher": {"kind": "direct"}
+    }
+  },
+  "bindings": [{"operation_role": "teacher.mace.train", "resource_class": "cpu", "target_pool": "local"}]
+}

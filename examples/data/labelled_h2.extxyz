@@ -1,0 +1,4 @@
+2
+Lattice="8 0 0 0 8 0 0 0 8" Properties=species:S:1:pos:R:3:forces:R:3 energy=-1.0 system_id=h2_demo pbc="F F F"
+H 0.00 0.00 0.00  0.0 0.0 0.0
+H 0.74 0.00 0.00  0.0 0.0 0.0
