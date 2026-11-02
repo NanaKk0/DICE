@@ -92,3 +92,9 @@ Build the dependency-free documentation website with
 `python tools/build_docs.py`; open `_site/index.html`, or serve `_site/` with
 `python -m http.server --directory _site 8000`. The optional GitHub Pages
 workflow is manually triggered after the authors configure hosting.
+
+## Licences
+
+Source code is licensed under MIT. Author-owned data, figures and documentation
+are licensed under CC BY 4.0. Study model weights carry CC BY-NC 4.0.
+See [LICENSING.md](LICENSING.md) for scope and attribution.

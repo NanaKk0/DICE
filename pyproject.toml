@@ -7,6 +7,7 @@ name = "dice-workflow"
 version = "0.1.0"
 description = "Distillation-driven co-evolution machine-learning force-field workflow"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = ["numpy", "ase", "scipy", "PyYAML", "scikit-learn", "umap-learn", "matplotlib"]
 

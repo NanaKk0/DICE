@@ -50,5 +50,5 @@ DeePMD-kit, NEP/GPUMD, LAMMPS, ASE, CP2K or ABACUS) according to their own
 documentation and the actual calculation. Third-party code, model, data and
 engine licences apply independently.
 
-The authors will finalize software licensing and public release identifiers
-before publication.
+The DICE source code is licensed under MIT; author-owned data, figures and
+documentation are licensed under CC BY 4.0. See [LICENSING.md](../LICENSING.md).
