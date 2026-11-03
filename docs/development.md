@@ -1,8 +1,8 @@
-# Development, provenance and citation
+# Development and third-party credit
 
 This directory is a curated export of the authoritative development tree.
 Runtime source snapshot: 2026-11-01;
-publication-package reorganization: 2026-11-02. Runtime package
+software distribution prepared: 2026-11-02. Runtime package
 files are copied unchanged; distribution metadata, portable documentation,
 test selection and the CPU demonstration are release presentation additions.
 Apply runtime fixes to the authoritative development checkout, then regenerate
@@ -39,13 +39,9 @@ static HTML under `_site/`. The included GitHub Pages workflow is manual and
 uses native Pages artifacts; enable Pages with GitHub Actions only when ready
 to publish. The builder and tests produce local outputs.
 
-## Citation and third-party credit
+## Third-party credit
 
-When citing this software, identify DICE, this snapshot date and the actual
-release identifier/archive record supplied by the authors at publication.
-For the paper, use the final bibliographic record supplied by the authors.
-
-Also cite the independently used engines and methods (for example MACE,
+Cite the independently used engines and methods (for example MACE,
 DeePMD-kit, NEP/GPUMD, LAMMPS, ASE, CP2K or ABACUS) according to their own
 documentation and the actual calculation. Third-party code, model, data and
 engine licences apply independently.

@@ -17,7 +17,7 @@ engine on the hardware and platform selected for your calculations.
 The Python package declares NumPy, ASE, SciPy, PyYAML, scikit-learn,
 umap-learn and Matplotlib for the control layer. Save resolved versions for each study.
 The distribution preserves upstream version `0.1.0`; the snapshot date
-distinguishes this preparation from an exact paper-era version.
+identifies this source distribution.
 
 `requirements-tested.txt` records the versions used for this export's bounded
 CPU acceptance on Python 3.10.20. To use those constraints, install with
@@ -26,7 +26,7 @@ Configure native backend environments separately as described below.
 
 ## External engines
 
-For the paper's DPA4/DPA4C route, start with the concrete model sources,
+For a DPA4/DPA4C workflow, start with the model sources,
 recorded native stack and CLI compatibility boundaries in
 [Models and native environments](native-models.md).
 

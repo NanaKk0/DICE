@@ -6,16 +6,12 @@ labels and assesses structures, a student explores configurations, and DICE
 selects structures for the next first-principles labeling cycle.
 
 [Get started](examples/cpu_mock/README.md) ·
-[User guide](docs/workflow.md) ·
-[Paper and research resources](docs/paper.md)
+[User guide](docs/workflow.md)
 
-Official repositories: [DICE software](https://github.com/NanaKk0/DICE) ·
-[Paper figures and source data](https://github.com/NanaKk0/DICE-paper)
+Official repository: [DICE software](https://github.com/NanaKk0/DICE)
 
 This software snapshot is dated **2026-11-02**. It contains the DICE runtime,
-user documentation, configuration guides and CPU examples. The companion paper
-and research archives provide numerical evidence, trained models and labelled
-datasets; see [Paper and research resources](docs/paper.md).
+user documentation, configuration guides and CPU examples.
 
 ## Install
 
@@ -85,8 +81,7 @@ and material.
 - [Environment and execution profiles](docs/environments.md)
 - [Recovery and diagnostics](docs/recovery.md)
 - [Support and qualification matrix](docs/support.md)
-- [Development and citation](docs/development.md)
-- [Paper and research resources](docs/paper.md)
+- [Development and third-party credit](docs/development.md)
 
 Build the dependency-free documentation website with
 `python tools/build_docs.py`; open `_site/index.html`, or serve `_site/` with
@@ -96,5 +91,5 @@ workflow is manually triggered after the authors configure hosting.
 ## Licences
 
 Source code is licensed under MIT. Author-owned data, figures and documentation
-are licensed under CC BY 4.0. Study model weights carry CC BY-NC 4.0.
+are licensed under CC BY 4.0.
 See [LICENSING.md](LICENSING.md) for scope and attribution.
