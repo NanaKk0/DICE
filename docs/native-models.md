@@ -18,6 +18,20 @@ complete native element map; DICE's active `type_map` specifies the target
 chemistry separately. An explicit learned-child map in an analytical
 composition must also preserve the foundation map and its order.
 
+The newer OMat24 qualification used these matching Nano file pairs:
+
+| Family | Checkpoint | Matching native recipe |
+| --- | --- | --- |
+| DPA4 | `DPA4-Nano-OMat24-v20260805.pt` | `DPA4-Nano-OMat24-v20260805.json` |
+| DPA4C | `DPA4C-Nano-OMat24-v20260819.pt` | `DPA4C-Nano-OMat24-v20260819.json` |
+
+Obtain the exact release from the model project's release/model listing; check
+its model card and licence. Do not substitute a similarly named checkpoint
+without also reviewing architecture, native recipe, type map and engine version.
+The historical Neo checkpoint above is a separate identity, not a replacement
+for the Nano qualification. Model download locations may evolve; preserve your
+chosen original filename and source alongside the study configuration.
+
 ## Recorded native builds
 
 | Component | Newer qualification, 2026-11-11 | Historical baseline |
@@ -39,6 +53,8 @@ Historical model exports may require their original runtime or re-exporting;
 arbitrary old `.pt2` packages are not guaranteed to load in the newer build.
 The newer path uses upstream embedding APIs and does not require the
 specialized historical exporter.
+
+For operation-by-operation instructions see [DeepMD usage](deepmd.md).
 
 ## CLI compatibility
 

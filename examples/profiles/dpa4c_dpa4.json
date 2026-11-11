@@ -1,0 +1,37 @@
+{
+  "schema": "dice.environment-profile",
+  "software_profiles": {
+    "models": {
+      "environment": {
+        "source_list": [
+          "activate-native.sh"
+        ]
+      },
+      "executables": {
+        "dp": "dp",
+        "python": "python"
+      }
+    },
+    "sampling": {
+      "environment": {
+        "source_list": [
+          "activate-native.sh"
+        ]
+      },
+      "executables": {
+        "lmp": "lmp",
+        "python": "python"
+      }
+    }
+  },
+  "bindings": {
+    "teacher.deepmd.pt.train": "models",
+    "teacher.deepmd.pt.label": "models",
+    "teacher.deepmd.pt.gmm_reference": "models",
+    "teacher.deepmd.pt.gmm_score": "models",
+    "student.deepmd.pt.train": "models",
+    "student.deepmd.pt.compress": "models",
+    "student.deepmd.pt.gmm_screen": "models",
+    "sampler.lammps.pt": "sampling"
+  }
+}

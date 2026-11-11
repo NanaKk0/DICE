@@ -56,3 +56,22 @@ links and the mapping from DICE's `cli: "pt"` declaration to the native
 `DP_INTERFACE_PREC=high` in the native activation script. This selects interface
 precision and does not promote the model's internal weights to double precision.
 See the [compatibility notes](deepmd-compatibility.md) for the tested scope.
+
+## Use the PT walkthrough profile
+
+The MACE/TF files above are one example, not the activation for every backend.
+For the DPA4/DPA4C walkthrough, copy
+[examples/profiles/dpa4c_dpa4.json](../examples/profiles/dpa4c_dpa4.json)
+into your run directory as `environment.json`. Copy
+[the activation template](../examples/profiles/dpa4c-dpa4.env.sh) there as
+`activate-native.sh` and replace its installation path.
+
+The profile binds teacher train/label/reference/score, student train/compress/
+fused screen and PT LAMMPS sampling. Omit execution placement for the default
+local route. Each operation resolves its configured executables after sourcing
+its profile's scripts; the control environment need not import the native
+engines. A working `dice --help` therefore does not prove a native profile works.
+
+Keep machine paths in activation/execution profiles, scientific choices in
+`run.json`, and training/MD parameters in native recipes. Do not add generic
+engine commands or CUDA settings as scientific configuration keys.
