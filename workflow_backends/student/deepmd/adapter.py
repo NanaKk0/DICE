@@ -62,6 +62,7 @@ from workflow_backends.sampling_models import (
 )
 from workflow_backends.deepmd_common.dataset import materialize_native_dataset
 from workflow_backends.deepmd_common.model_recipe import synchronize_model_random_seeds
+from workflow_core.model_families import deepmd_recipe_model_family
 from workflow_backends.deepmd_common.type_maps import (
     resolve_training_type_maps,
     validated_type_map,
@@ -1194,9 +1195,7 @@ def _rebase_retained_training_inputs(
 
 
 def _deepmd_recipe_kind(recipe: object) -> str:
-    model = recipe.get("model", {}) if isinstance(recipe, dict) else {}
-    descriptor = model.get("descriptor", {}) if isinstance(model, dict) else {}
-    if isinstance(descriptor, dict) and descriptor.get("type") == "dpa4c":
+    if isinstance(recipe, Mapping) and deepmd_recipe_model_family(recipe) == "dpa4c":
         return "dpa4c"
     return "standard"
 

@@ -1,9 +1,10 @@
 # Development and third-party credit
 
 This directory is a curated export of the authoritative development tree.
-Runtime source snapshot: 2026-11-01;
-software distribution prepared: 2026-11-02. Runtime package
-files are copied unchanged; distribution metadata, portable documentation,
+Runtime source baseline: 2026-11-01; software distribution prepared: 2026-11-02.
+The 2026-11-11 update ports the bounded DeepMD preset, analytical-bridging and
+readout changes from the authoritative development tree. Runtime changes are
+copied from that tree; distribution metadata, portable documentation,
 test selection and the CPU demonstration are release presentation additions.
 Apply runtime fixes to the authoritative development checkout, then regenerate
 and revalidate a new distribution snapshot.
@@ -33,6 +34,11 @@ The curated suite checks structure IO/identity, lifecycle state transitions,
 selectors, pair guard, model/artifact handles, feature reuse and the portable
 mock lifecycle. Native engine tests use separate installations, authorized
 resources and study-specific acceptance criteria.
+
+DeepMD regression tests additionally cover preset routing, member seeds,
+foundation/native type maps, complete-model atomic readout, legacy fallback,
+and native train/freeze/compression command contracts. These CPU tests use
+native-service doubles; they do not rerun GPU fine-tuning or LAMMPS.
 
 The documentation builder uses only Python's standard library and produces
 static HTML under `_site/`. The included GitHub Pages workflow is manual and

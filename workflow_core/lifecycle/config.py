@@ -1179,11 +1179,8 @@ def validate_role_recipe_feasibility(config: RunConfig, role: str) -> None:
                         f"{role}.recipe declares workflow-owned {field}.systems"
                     )
         if role == "student":
-            model = recipe.get("model", {})
-            descriptor = model.get("descriptor", {}) if isinstance(model, dict) else {}
             if (
-                isinstance(descriptor, dict)
-                and descriptor.get("type") == "dpa4c"
+                deepmd_recipe_model_family(recipe) == "dpa4c"
                 and spec.get("cli") != "pt"
             ):
                 raise ValueError("DPA4C student recipes require a DeepMD/PT declaration")
@@ -1196,7 +1193,12 @@ def validate_role_recipe_feasibility(config: RunConfig, role: str) -> None:
         if role == "student" and route is not None and route.student_requires_reference_tail:
             descriptor = recipe.get("model", {}).get("descriptor", {})
             expected = "se_e2_a" if spec.get("cli") == "tf" else "dpa4c"
-            if not isinstance(descriptor, dict) or descriptor.get("type") != expected:
+            selected = (
+                deepmd_recipe_model_family(recipe) == "dpa4c"
+                if expected == "dpa4c"
+                else isinstance(descriptor, dict) and descriptor.get("type") == expected
+            )
+            if not selected:
                 raise ValueError(
                     "the supported DeepMD GMM student recipe requires "
                     f"model.descriptor.type={expected!r} for cli={spec.get('cli')!r}"

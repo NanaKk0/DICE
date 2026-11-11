@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any
 
+from workflow_core.model_families import deepmd_learned_model_config
+
 
 def synchronize_model_random_seeds(rendered: MutableMapping[str, Any], seed: int) -> None:
     """Use one deterministic seed for every random component of one member."""
@@ -16,7 +18,15 @@ def synchronize_model_random_seeds(rendered: MutableMapping[str, Any], seed: int
     model = rendered.setdefault("model", {})
     if not isinstance(model, MutableMapping):
         raise ValueError("DeepMD native model configuration must be an object")
-    for container_name, container in (("model", model), ("top-level", rendered)):
+    learned = deepmd_learned_model_config(model)
+    if not isinstance(learned, MutableMapping):
+        raise ValueError("DeepMD native learned model configuration must be an object")
+    if "preset" in learned or learned is not model:
+        # Overrides are merged by the selected native DeePMD runtime. Supply
+        # only the member-owned seeds, leaving architecture expansion native.
+        for key in ("descriptor", "fitting_net"):
+            learned.setdefault(key, {})
+    for container_name, container in (("model", learned), ("top-level", rendered)):
         for key in ("descriptor", "fitting_net"):
             component = container.get(key)
             if component is not None:

@@ -37,9 +37,9 @@ Optional top-level keys: `visualize`.
 | `_validate_screen:1002` | `'screen'` | `fill_underfilled_from_safe_region`, `fp_pool`, `hi`, `keep`, `lo`, `pair_guard`, `policy`, `pool`, `prescreen`, `student_p`, `teacher_p` |
 | `_validate_fp:1111` | `'fp'` | `all_rn`, `keep`, `label`, `policy` |
 | `_validate_fp:1140` | `'fp.label'` | `calculator`, `recipe` |
-| `_normalize_role_train_options:1289` | `f'{role}.train_options'` | `skip_neighbor_stat` |
-| `_p_band_config:1341` | `field_name` | `ceiling`, `floor`, `trust` |
-| `_pair_guard_config:1361` | `'screen.pair_guard'` | `min`, `pairs` |
+| `_normalize_role_train_options:1291` | `f'{role}.train_options'` | `skip_neighbor_stat` |
+| `_p_band_config:1343` | `field_name` | `ceiling`, `floor`, `trust` |
+| `_pair_guard_config:1363` | `'screen.pair_guard'` | `min`, `pairs` |
 
 Temperature-program segments and symmetric-strain endpoint components are
 validated with exact-set comparisons: see
