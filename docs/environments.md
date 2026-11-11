@@ -28,7 +28,10 @@ student needs `student.deepmd.tf.train`, `.gmm_reference`, `.gmm_score` and
 FP labeling select their own exact roles. The canonical list lives in
 `workflow_runtime/lifecycle/environment.py`; use the roles selected by your workflow.
 
-## Execution shape
+## Execution placement
+
+For targets, launchers, resource restrictions and remote recovery, read
+[execution](execution.md).
 
 `examples/profiles/execution.json` illustrates one local CPU resource class
 for the teacher training role. Set scientific resources according to your

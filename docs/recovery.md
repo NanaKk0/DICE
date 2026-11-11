@@ -1,52 +1,73 @@
-# Recovery and diagnostics
+# Continue or rebuild a run
 
-Run from the directory containing the intended `run.json`. Ordinary
-invocation follows actual result dependencies and reuses consumer-runnable
-canonical artifacts. With a completed terminal result, ordinary invocation
-reuses that result. Canonical outputs establish completion; the configuration
-specifies the execution plan.
+Use the intended run directory and control environment. Ordinary continuation
+and deliberate rebuilding have different effects; choose the operation that
+matches your intent before executing it.
+
+| Your intent | Operation | Expected scope |
+| --- | --- | --- |
+| Continue after interruption | Ordinary `dice run.json` | Reuse valid results and perform needed remaining work |
+| Reopen a completed iteration without changes | Ordinary invocation | Reuse the consumer-valid terminal result |
+| Inspect whether an exact rebuild is feasible | `--probe BLOCK` | Read-only dependency/suffix validation |
+| Recompute a selected block | `--resume BLOCK` | Replace that block and every later current-iter result |
+| Add new rounds | Append-only round extension, ordinary invocation | Preserve valid exact prefix and rebuild the stale terminal handoff |
+| Intentionally remove higher rounds | Explicit truncation procedure | Archive the retired higher-round evidence and rebuild FP |
+
+## Ordinary continuation
 
 ```sh
 dice run.json --environment environment.json
 ```
 
-Use a read-only probe to check the feasibility of an exact rebuild boundary:
+DICE checks formal outputs through their consumers. A valid completed terminal
+result can make this a no-op even when some unused prefix evidence or current
+settings differ. Editing a recipe does not by itself force a completed train
+result to be recomputed. Inspect the dependency boundary and explicitly request
+rebuilding when that is your intent.
+
+## Inspect and rebuild an exact suffix
 
 ```sh
 dice run.json --environment environment.json --probe r1/sample
+dice run.json --environment environment.json --resume r1/sample --preflight
 ```
 
-A runnable probe statically validates the suffix. A blocked response can report
-the blocking result and a recommended earlier producer; review that change
-of scope before choosing a different target.
-
-To deliberately rebuild exactly the selected block and its remaining
-current-iteration suffix, preflight then execute:
+The probe is read-only. A blocked response can identify an earlier producer
+that must be repaired. It does not silently widen the requested target.
+After reviewing feasibility and the replacement scope, execute:
 
 ```sh
-dice run.json --environment environment.json --resume r1/sample --preflight
 dice run.json --environment environment.json --resume r1/sample
 ```
 
-This replaces the selected block and the remaining current-iteration suffix.
-Choose the intended boundary explicitly and use these commands to manage
-recovery while preserving the lifecycle state.
+This rebuilds r1/sample, r1/screen and the remaining configured current-iteration
+suffix, including FP. It is not a request to continue a particular native MD
+step or optimizer checkpoint. Public boundaries are teach/train, teach/screen,
+teach/scan where applicable, rN/train, rN/sample, rN/screen, fp and optional fp/label.
 
-## Changing the round sequence
+## Extend or shorten the round plan
 
-An already-completed iteration can extend an explicit `sample.rounds` array
-only by appending to its exact former prefix. Ordinary invocation preserves
-old round evidence and rebuilds the stale terminal handoff from the first new
-round. Reorder, middle insertion and accidental shrink fail closed.
+An explicit `sample.rounds` array can grow only by appending to its exact former
+prefix. After inspection and preflight, ordinary invocation continues at the
+first new rN/train and replaces the stale FP handoff. Reordering, insertion,
+renumbering or accidental shrink is rejected.
 
-Intentional shrink is separate: shorten the configuration, preflight
-`--resume fp`, then deliberately execute `--resume fp --truncate-after-round N`,
-where N is the configured terminal round. DICE archives higher-round evidence
-below `.dice_state/round_truncations/` for recovery and traceability.
+To intentionally shorten a completed plan, first change the scientific plan
+to its desired terminal round N. Inspect and preflight the exact FP boundary,
+then use `--resume fp --truncate-after-round N`. Here N is the final zero-based
+round index in the shortened configuration. DICE archives retired higher-round
+evidence beneath `.dice_state/round_truncations/`; ordinary continuation does
+not perform this destructive-scope choice for you.
 
-## What to inspect
+## Diagnose before changing state
 
-Use `iterN/status.log`, `iterN/dice.log`, backend logs, attempts and operation
-receipts to diagnose failures. Some sampling routes can retain validated
-prefixes of failed tasks; others fail atomically. Canonical consumer validation
-determines completion. Logs and optional plots provide diagnostic context.
+Inspect `iterN/status.log` for lifecycle attempts, `iterN/dice.log` for scientific
+screening counts and the failed block's backend logs for native errors.
+Successful scheduler/process receipts or a SUCCESS log line do not alone prove
+that all required artifacts can be consumed.
+
+Leave `.dice_state` and published model/dataset relationships managed by DICE.
+Do not repair a run by deleting arbitrary state files or renaming model
+suffixes. Sampling-prefix retention is route-specific; use the declared public
+recovery boundary. [Troubleshooting](troubleshooting.md) maps common symptoms
+to checks; [execution](execution.md) explains remote operational receipts.
