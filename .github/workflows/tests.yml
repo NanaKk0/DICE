@@ -17,3 +17,4 @@ jobs:
       - run: dice --help
       - run: python -m pytest -q
       - run: python tools/build_docs.py
+      - run: python tools/check_docs.py --site _site

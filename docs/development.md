@@ -1,56 +1,75 @@
-# Development and third-party credit
+# Development and documentation maintenance
 
-This directory is a curated export of the authoritative development tree.
-Runtime source baseline: 2026-11-01; software distribution prepared: 2026-11-02.
-The 2026-11-11 update ports the bounded DeepMD preset, analytical-bridging and
-readout changes from the authoritative development tree. Runtime changes are
-copied from that tree; distribution metadata, portable documentation,
-test selection and the CPU demonstration are release presentation additions.
-Apply runtime fixes to the authoritative development checkout, then regenerate
-and revalidate a new distribution snapshot.
+DICE's installed console entry is
+`dice = workflow_app.entrypoint:console_main`. The public runtime is organized
+as six packages:
 
-## Architecture
+| Package | Responsibility |
+| --- | --- |
+| `workflow_app` | Public CLI and application composition |
+| `workflow_core` | Backend-neutral lifecycle/scientific orchestration |
+| `workflow_runtime` | Execution, observation, publication and recovery |
+| `workflow_artifacts` | Typed and serialized outputs |
+| `workflow_backends` | Native engine operations and parsing |
+| `workflow_policies` | Screening and representative selection |
 
-- `workflow_app`: public CLI, composition and application boundary.
-- `workflow_core`: backend-neutral lifecycle and scientific orchestration.
-- `workflow_runtime`: publication, recovery, observation and execution adapters.
-- `workflow_artifacts`: typed and serialized artifacts.
-- `workflow_backends`: native engine operations and evidence parsing.
-- `workflow_policies`: screening, routing and representative selection.
-
-The installed console script is `dice = workflow_app.entrypoint:console_main`.
-These six packages form the runtime source closure. The distribution also
-contains the portable documentation, tests and CPU examples listed above.
-
-## Tests and documentation
+## Test the control package
 
 ```sh
 python -m pip install -e '.[test]'
 python -m pytest -q
-python tools/build_docs.py
+python tools/generate_config_reference.py --check
 ```
 
-The curated suite checks structure IO/identity, lifecycle state transitions,
-selectors, pair guard, model/artifact handles, feature reuse and the portable
-mock lifecycle. Native engine tests use separate installations, authorized
-resources and study-specific acceptance criteria.
+The CPU suite covers canonical IO/identity, scientific configuration, public
+examples, model assets, selected native-service contracts and recovery. It
+uses native-service doubles rather than installing PyTorch/DeePMD. Run native
+engine acceptance separately on matching installations. Do not treat fixture
+success as force-field accuracy or GPU scaling evidence.
 
-DeepMD regression tests additionally cover preset routing, member seeds,
-foundation/native type maps, complete-model atomic readout, legacy fallback,
-and native train/freeze/compression command contracts. These CPU tests use
-native-service doubles; they do not rerun GPU fine-tuning or LAMMPS.
+## Build and check documentation
 
-The documentation builder uses only Python's standard library and produces
-static HTML under `_site/`. The included GitHub Pages workflow is manual and
-uses native Pages artifacts; enable Pages with GitHub Actions only when ready
-to publish. The builder and tests produce local outputs.
+```sh
+python -m pip install -e '.[docs]'
+python tools/generate_config_reference.py --check
+python tools/build_docs.py
+python tools/check_docs.py --site _site
+python -m http.server --directory _site 8000
+```
 
-## Third-party credit
+Open `http://localhost:8000/`. The documentation extra supplies Python-Markdown;
+the site uses its fenced code, tables, heading anchors and list support. Local
+file/heading links and generated HTML assets are checked. Network URLs are not
+fetched by the checker. `_site/` is generated output, not source content.
 
-Cite the independently used engines and methods (for example MACE,
-DeePMD-kit, NEP/GPUMD, LAMMPS, ASE, CP2K or ABACUS) according to their own
-documentation and the actual calculation. Third-party code, model, data and
-engine licences apply independently.
+The [documentation directory](index.md) supplies grouped navigation. Keep new
+pages linked there. Preserve existing page URLs or leave a useful migration
+entry. Configuration-key inventory is generated from the **published loader**,
+not manually copied from another development branch.
 
-The DICE source code is licensed under MIT; author-owned data, figures and
-documentation are licensed under CC BY 4.0. See [LICENSING.md](../LICENSING.md).
+The CI matrix runs on Python 3.10/3.12 and validates the CPU suite, inventory,
+site and local links. The optional Pages workflow is manually triggered after
+hosting is configured; changing Markdown does not itself enable hosting.
+
+## Maintain source and publication separately
+
+This is a curated public software export. In the maintainers' authoritative
+development checkout, `docs/public/` mirrors the public documentation paths.
+Maintain public text there and export explicitly selected files with
+`scripts/export_public_docs.py`; release worktrees are publication targets.
+That exporter and internal plans are development-side tools, not requirements
+for an ordinary user cloning this repository.
+
+Runtime fixes first belong in the authoritative source, with relevant tests.
+Public documentation must describe the actual release implementation, including
+its limits; unpublished development capabilities are not release promises.
+Publish coherent changes through branches/PRs after checking the exact target
+version and preserving other contributors' updates. Record user-visible changes
+in [changelog](changelog.md).
+
+## Third-party credit and licences
+
+Cite engines and methods actually used: for example MACE, DeePMD-kit, NEP/GPUMD,
+LAMMPS, ASE, CP2K and ABACUS. Their model/code/data licences apply independently.
+Code is MIT and author-owned documentation/data/figures use CC BY 4.0;
+see [LICENSING.md](../LICENSING.md).

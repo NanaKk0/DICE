@@ -12,7 +12,8 @@ requires-python = ">=3.10"
 dependencies = ["numpy", "ase", "scipy", "PyYAML", "scikit-learn", "umap-learn", "matplotlib"]
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
+test = ["pytest>=8", "Markdown>=3.6,<4"]
+docs = ["Markdown>=3.6,<4"]
 
 [project.scripts]
 dice = "workflow_app.entrypoint:console_main"
