@@ -4,58 +4,17 @@ This update supports the newer native DPA4/DPA4C recipe and embedding
 interfaces. The public workflow remains `dice run.json`; native model settings
 belong in the teacher/student recipe. See [native versions and CLI selectors](native-models.md).
 
-## Native presets
+## Usage and version scope
 
-A native model may declare `model.preset`, for example
-`"dpa4-nano-v20260911"` or `"dpa4c-nano-v20260911"`. DICE recognizes the
-family before selecting the operation roles and native backend. DeePMD owns
-preset validation and architecture expansion. DICE supplies workflow-owned
-datasets, native type maps and distinct member seeds; minimal preset recipes
-also receive descriptor and fitting seeds without expanding the architecture
-inside DICE.
+[DeepMD usage](deepmd.md) covers preset recipes, analytical ZBL, full-model
+readout, member seeds and native command selection. [Models and builds](native-models.md)
+records the exact engine revision. This page retains the qualification scope
+and numerical limitations so that successful execution is not confused with
+scientific accuracy.
 
-## Analytical ZBL
-
-The following is a model fragment for a compatible native recipe, not a
-complete training input:
-
-```json
-{
-  "model": {
-    "preset": "dpa4c-nano-v20260911",
-    "bridging_method": "zbl"
-  }
-}
-```
-
-Use the corresponding DPA4 preset for the teacher. DICE also recognizes the
-canonical `linear_ener` composition of exactly one learned model and one
-`inner_potential` with `weights: "sum"`. It routes member seeds and model
-metadata to the learned component. General linear ensembles and legacy
-tabulated `use_srtab` readout do not gain support through this change.
-
-Fine-tune after enabling ZBL and preserve it when continuing training. Let
-DeePMD own window parameters, recipe validation and short-distance data
-filtering. Check interactions with `training_data.min_pair_dist` against the
-selected native version. DICE labels with the full model and does not subtract
-ZBL; do not add another ZBL contribution in the LAMMPS input.
-
-## Readout and neighbour graphs
-
-DICE uses the full model's official `eval_embedding` second return value,
-`atomic_feature`: the per-atom hidden input to the final energy projection.
-It retains dimensions connected to that projection and preserves atom order
-and the active/native element mapping. Inspecting the learned child supplies
-metadata only; it does not bypass the full composite forward or append
-analytical-potential features.
-
-Older models use `eval_fitting_last_layer` when `eval_embedding` is absent or
-explicitly raises `NotImplementedError`. Other embedding errors propagate.
-Neighbour graphs use `auto`; newer ordinary DPA4 no longer accepts the
-previous explicit `dense` selector. Maintainer profiling of the newer plain
-and ZBL readout paths observed graph execution without entering the legacy
-padded-neighbour preparation path. This does not certify performance for
-every model or system size.
+Maintainer profiling observed graph execution for plain/ZBL readout without
+entering legacy padded-neighbour preparation. That observation does not
+certify performance for every model or atom count.
 
 ## Native qualification and limits
 

@@ -21,6 +21,7 @@ activated your DICE control environment; native engines use their own profiles.
 | [Accepted-key appendix](configuration-fields.md) | Automatically generated field inventory |
 | [Environments](environments.md) | Engine activation, executable bindings and execution profiles |
 | [Models](native-models.md) | Foundation sources, native versions and model file roles |
+| [DeepMD usage](deepmd.md) | Fine-tuning, exports, compression, ZBL and Kokkos |
 | [DeepMD compatibility](deepmd-compatibility.md) | Presets, ZBL, readout and measured numerical limitations |
 
 ## Operate and maintain

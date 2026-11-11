@@ -75,3 +75,36 @@ iteration's `fp_data`. For iter 2 and beyond, explicitly retain earlier returned
 FP files in the declared teacher inputs if they remain in your training set;
 FP returns must contain labels computed by the selected first-principles calculator. See the
 [worked iter-0 → iter-1 handoff](../examples/iteration_handoff/README.md).
+
+## Check a dataset before using it
+
+In your activated control environment, use ASE to inspect the file and DICE's
+label validator for teacher/FP energy and force requirements:
+
+```python
+from ase.io import read
+from workflow_core.lifecycle.data import LabelContract, validate_label_properties
+frames = read("data/bootstrap.extxyz", ":")
+assert frames
+validate_label_properties(frames, LabelContract())
+print(len(frames), sorted({s for f in frames for s in f.get_chemical_symbols()}))
+```
+
+This minimal check does not infer your recipe's stress/virial requirements.
+Inspect those tensors and their units separately when your loss uses them.
+Check duplicate geometries for compatible labels, finite cell volumes for
+periodic data and every species against the consuming role's active map.
+Keep a genuinely independent scientific test set outside training and its
+validation split. Do not fill absent FP labels with teacher predictions.
+
+## Keep a deliberate multi-iteration history
+
+At iter0, teacher bootstrap contains external labels and student bootstrap can
+contain geometry alone. At iter1, set student bootstrap to `[]`; the preceding
+final-round student train membership plus final screen additions are relabelled
+by the new teacher. Foundation fine-tuning policy still determines weights.
+
+At iter2 and later, list earlier returned FP files explicitly if they must
+remain in the teacher data union. DICE does not treat every file somewhere in
+the run directory as retained training data. Review the actual train/validation
+memberships and counts after each iteration, particularly for small datasets.

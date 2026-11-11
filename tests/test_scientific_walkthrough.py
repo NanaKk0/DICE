@@ -56,3 +56,13 @@ def test_dependencies_explain_current_and_historical_interfaces():
     assert 'cli: "pt"' in text
     assert "specialized historical exporter" in text
     assert "deepmd-compatibility.md" in text
+
+
+def test_portable_pt_profile_matches_the_walkthrough():
+    doc = (ROOT / 'docs/own-system.md').read_text()
+    _, documented = [json.loads(block) for block in re.findall(r'```json\n(.*?)\n```', doc, re.S)]
+    template_path = ROOT / 'examples/profiles/dpa4c_dpa4.json'
+    assert json.loads(template_path.read_text()) == documented
+    loaded = load_environment_profile(template_path)
+    assert loaded.bindings['student.deepmd.pt.gmm_screen'] == 'models'
+    assert loaded.bindings['sampler.lammps.pt'] == 'sampling'
