@@ -8,7 +8,8 @@ explicit false disables non-authoritative diagnostics.
 
 Every declared input/recipe/model path is relative to that `run.json`.
 List files explicitly using run-root-relative paths. Configure executables and
-activation in environment profiles, and hardware placement in execution profiles.
+activation in [environment profiles](environments.md), and hardware placement
+in [execution profiles](execution.md).
 
 ## Four separate layers
 
@@ -25,7 +26,8 @@ before adapting it. Its recipes and data are synthetic test fixtures.
 Prepare native recipes and model inputs for scientific runs using the
 [own-system walkthrough](own-system.md).
 
-Start an adaptation with [your own system](own-system.md), then check the
+Use this page for field lookup; use [screening](screening.md) and [sampling](sampling.md)
+for strategy explanations. Start an adaptation with [your own system](own-system.md), then check the
 [labelled-data contract](data.md). The [generated accepted-key inventory](configuration-fields.md)
 is extracted from this distribution's loader.
 Regenerate or check it with `python tools/generate_config_reference.py --check`.
@@ -98,16 +100,12 @@ the declared policy controls weight initialization. Recovery reuses a
 consumer-runnable published train result or rebuilds the explicitly selected
 block and suffix.
 
-## Screening, confidence and terminal selection
+## Screening fields and terminal selection
 
-The single-model score `p` is a dimensionless empirical reference-tail rank.
-Smaller p means
-more surprising relative to the current model's training reference. The fixed
-router calibrates atomic negative-log-likelihood tails, averages the largest
-ceil(5% of atoms) atomic negative-log-likelihood values, then calibrates that frame statistic against the
-reference frames. A tail uses `(count(reference >= query) + 1)/(N + 1)`;
-therefore finite calibration size limits resolution. Use p-bands for single-model
-routing and eV/Å force-deviation thresholds for committees.
+For the scientific meaning of GMM p values, committee deviations, trust,
+representative selection and quotas, read [screening](screening.md). The table
+below is the exact field/boundary reference. Single-model p is dimensionless;
+committee thresholds use eV/Å.
 
 | Field | Type / default | Contract |
 | --- | --- | --- |
@@ -145,7 +143,10 @@ candidate-only ELEMENT_DIRECT resolves to random, with explicit
 `policy_resolution.json`; joint element selection is invalid for a committee.
 Missing/corrupt single-model descriptor evidence never permits that fallback.
 
-## Explicit sampling fields and conditions
+## Sampling field reference
+
+For task expansion, geometry requirements and condition examples, see
+[sampling](sampling.md). The tables below specify the accepted fields.
 
 For new configurations prefer explicit sampling. `sampler` then contains only
 required `backend` (`LAMMPS` or `GPUMD`); recipe paths belong to MD condition

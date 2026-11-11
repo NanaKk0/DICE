@@ -136,7 +136,7 @@ The quotas count frames per selection group. In this example teacher trust
 requires `p > 0.1`, while its FP reservation uses `0 <= p < 0.1`.
 The two views are independent; other valid bands can overlap. These p values
 are training-reference tail ranks, not probabilities that predictions are
-correct. Consult [screening rules](configuration.md) before choosing them.
+correct. Consult [screening rules](screening.md) before choosing them.
 
 This configuration leaves default diagnostics enabled, pair guard disabled,
 GMM prescreening selected, and teacher-data inclusion in student bootstrap

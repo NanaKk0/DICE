@@ -34,7 +34,8 @@ A single model uses its training-reference support score where supported; a
 committee uses force-deviation evidence. The routes have different threshold
 units. Student training additions and FP candidates are separate destinations;
 teacher views may overlap. Selection quotas are upper bounds, not guarantees.
-See [configuration](configuration.md) for exact boundaries.
+Read [screening](screening.md) for the decisions and
+[configuration](configuration.md) for exact boundaries.
 
 ## Rounds, seeds and training policies
 

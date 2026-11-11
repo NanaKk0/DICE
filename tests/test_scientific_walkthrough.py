@@ -66,3 +66,34 @@ def test_portable_pt_profile_matches_the_walkthrough():
     loaded = load_environment_profile(template_path)
     assert loaded.bindings['student.deepmd.pt.gmm_screen'] == 'models'
     assert loaded.bindings['sampler.lammps.pt'] == 'sampling'
+
+
+def test_sampling_guide_fragments_load_in_the_complete_workflow(tmp_path):
+    import copy
+    guide = (ROOT / 'docs/own-system.md').read_text()
+    base = json.loads(re.findall(r'```json\n(.*?)\n```', guide, re.S)[0])
+    fragments = [json.loads(block) for block in re.findall(r'```json\n(.*?)\n```', (ROOT/'docs/sampling.md').read_text(), re.S)]
+    assert fragments
+    for fragment in fragments:
+        payload = copy.deepcopy(base)
+        payload['sample'] = {'round_count': 1, 'seeds': {'bulk': {'source': 'seeds/md.extxyz'}},
+                             'condition_groups': {'example': fragment}}
+        run = tmp_path / 'run.json'
+        run.write_text(json.dumps(payload))
+        config = load_run_config(run)
+        assert config.round_count == 1
+
+
+def test_other_backend_and_fp_fragments_use_accepted_public_shapes(tmp_path):
+    import copy
+    guide = (ROOT/'docs/own-system.md').read_text()
+    base = json.loads(re.findall(r'```json\n(.*?)\n```', guide, re.S)[0])
+    for name, role in [('mace.md','teacher'), ('nep.md','student'), ('first-principles.md','fp')]:
+        payload = copy.deepcopy(base)
+        fragment = json.loads(re.findall(r'```json\n(.*?)\n```', (ROOT/'docs'/name).read_text(), re.S)[0])
+        payload[role] = fragment
+        if name == 'nep.md':
+            payload['sampler'] = {'backend': 'GPUMD'}
+        run = tmp_path/'run.json'
+        run.write_text(json.dumps(payload))
+        assert load_run_config(run).round_count == 2

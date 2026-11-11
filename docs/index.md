@@ -17,17 +17,29 @@ activated your DICE control environment; native engines use their own profiles.
 | Guide | Use it for |
 | --- | --- |
 | [Data](data.md) | Label units, extxyz, validation populations and returned FP data |
+| [Screening](screening.md) | Support scores, trust, quotas and representative selection |
+| [Sampling](sampling.md) | Seeds, conditions, native protocols and advanced acquisition |
 | [Configuration](configuration.md) | Scientific fields, defaults, applicability and boundary rules |
 | [Accepted-key appendix](configuration-fields.md) | Automatically generated field inventory |
-| [Environments](environments.md) | Engine activation, executable bindings and execution profiles |
+| [Environments](environments.md) | Engine activation and executable bindings |
+| [Execution](execution.md) | Local/SSH/Slurm placement and operation-specific resources |
 | [Models](native-models.md) | Foundation sources, native versions and model file roles |
 | [DeepMD usage](deepmd.md) | Fine-tuning, exports, compression, ZBL and Kokkos |
 | [DeepMD compatibility](deepmd-compatibility.md) | Presets, ZBL, readout and measured numerical limitations |
+
+## Other engines and labels
+
+| Guide | Use it for |
+| --- | --- |
+| [MACE/MACE-LES](mace.md) | Teacher recipes, initialization and operation bindings |
+| [NEP/GPUMD](nep.md) | Student model/restart pairs, readout and GPUMD |
+| [First principles](first-principles.md) | External returns and optional local CP2K/ABACUS labels |
 
 ## Operate and maintain
 
 | Guide | Use it for |
 | --- | --- |
+| [Troubleshooting](troubleshooting.md) | Diagnose common input, model, environment and screening failures |
 | [Recovery](recovery.md) | Continue after interruption or rebuild an explicitly selected suffix |
 | [Capabilities](support.md) | Check backend requirements and qualification boundaries |
 | [Development](development.md) | Run tests, build documentation and understand package responsibilities |
