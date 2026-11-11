@@ -49,10 +49,10 @@ def test_managed_nvt_documentation_contract(tmp_path):
 
 def test_dependencies_explain_current_and_historical_interfaces():
     text = (ROOT / "docs/native-models.md").read_text()
-    for value in ["3.2.0b1.dev20260728", "2.11.0+cu130", "13.0", "4.6.2",
-                  "dp --pt-expt", "DPA4-Neo-OMat24-v20260627.pt",
-                  "DPA4C-Nano-zeng222-model.ckpt-1000000.pt"]:
+    for value in ["3.2.0b1.dev20260728", "3.2.0+g3b2555c46", "2.11.0+cu130",
+                  "13.0", "4.6.2", "dp --pt-expt", "dp --pt",
+                  "DPA4-Neo-OMat24-v20260627.pt"]:
         assert value in text
-    assert "request this version from the model authors" in text
-    assert "Arrange access to a compatible build" in text
+    assert 'cli: "pt"' in text
     assert "specialized historical exporter" in text
+    assert "deepmd-compatibility.md" in text

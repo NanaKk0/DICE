@@ -11,7 +11,10 @@ from typing import Any
 import numpy as np
 from ase import Atoms
 
-from workflow_core.model_families import canonical_deepmd_descriptor_family
+from workflow_core.model_families import (
+    canonical_deepmd_descriptor_family,
+    deepmd_learned_model_config,
+)
 from workflow_backends.descriptor_stream import (
     READOUT_INPUT_IDENTITY,
     AtomDescriptorChunk,
@@ -75,9 +78,7 @@ class DeepMDPTReadoutInputExporter:
                 str(self.readout_source_path),
                 device=device,
                 auto_batch_size=False,
-                neighbor_graph_method=(
-                    "auto" if requested_family == "dpa4c" else "dense"
-                ),
+                neighbor_graph_method="auto",
             )
         self.terminal_model = terminal_model
         self.readout_model = terminal_model
@@ -102,6 +103,39 @@ class DeepMDPTReadoutInputExporter:
             raise ValueError(f"DPA4 descriptor {role} requires native suffix {suffix}")
 
     @staticmethod
+    def _learned_atomic_model(deep_pot: Any) -> Any:
+        """Inspect the unique learned branch without detaching its forward."""
+        deep_eval = deep_pot.deep_eval
+        backend_model = getattr(deep_eval, "_dpmodel", None)
+        if backend_model is not None:
+            atomic_model = backend_model.get_dp_atomic_model()
+            if atomic_model is None:
+                atomic_model = getattr(backend_model, "atomic_model", None)
+        else:
+            wrapper = getattr(deep_eval, "dp", None)
+            branches = getattr(wrapper, "model", None)
+            if branches is None or "Default" not in branches:
+                raise ValueError("DeepMD inference model has no Default model branch")
+            atomic_model = getattr(branches["Default"], "atomic_model", None)
+        if (getattr(atomic_model, "descriptor", None) is not None
+                and getattr(atomic_model, "fitting_net", None) is not None):
+            return atomic_model
+        definition = deep_pot.get_model_def_script()
+        learned_def = deepmd_learned_model_config(definition)
+        analytical = (
+            learned_def is not definition
+            or str(definition.get("bridging_method", "none")).lower() not in {"", "none"}
+        )
+        if not analytical or learned_def.get("use_srtab") is not None:
+            raise ValueError("DeepMD composite readout is limited to analytical bridging")
+        learned = [child for child in getattr(atomic_model, "models", ())
+                   if getattr(child, "descriptor", None) is not None
+                   and getattr(child, "fitting_net", None) is not None]
+        if len(learned) != 1:
+            raise ValueError("DeepMD readout requires exactly one learned descriptor-fitting branch")
+        return learned[0]
+
+    @staticmethod
     def _resolve_metadata(deep_pot: Any) -> DPA4FittingMetadata:
         type_map = tuple(str(item) for item in deep_pot.get_type_map())
         if not type_map or len(set(type_map)) != len(type_map):
@@ -110,29 +144,18 @@ class DeepMDPTReadoutInputExporter:
             model_def = dict(deep_pot.get_model_def_script())
         except Exception as exc:
             raise ValueError("DPA4 descriptor model must expose its native model definition") from exc
-        descriptor = dict(model_def.get("descriptor", {}))
+        learned_def = deepmd_learned_model_config(model_def)
+        descriptor = dict(learned_def.get("descriptor", {}))
         native_model_family = str(descriptor.get("type", ""))
         model_family = canonical_deepmd_descriptor_family(native_model_family)
         if model_family not in {"dpa4", "dpa4c"}:
             raise ValueError(
                 "DeepMD-PT readout model must declare a DPA4/SeZM or DPA4C descriptor"
             )
-        fitting_def = dict(model_def.get("fitting_net", {}))
+        fitting_def = dict(learned_def.get("fitting_net", {}))
         configured = tuple(int(value) for value in fitting_def.get("neuron", ()))
         try:
-            deep_eval = deep_pot.deep_eval
-            backend_model = getattr(deep_eval, "_dpmodel", None)
-            if backend_model is not None:
-                atomic_model = backend_model.get_dp_atomic_model()
-            else:
-                model_wrapper = getattr(deep_eval, "dp", None)
-                model_dict = getattr(model_wrapper, "model", None)
-                if model_dict is None or "Default" not in model_dict:
-                    raise ValueError("DeepMD inference model has no Default model branch")
-                model = model_dict["Default"]
-                atomic_model = getattr(model, "atomic_model", None)
-                if atomic_model is None:
-                    raise ValueError("DeepMD inference model has no atomic model")
+            atomic_model = DeepMDPTReadoutInputExporter._learned_atomic_model(deep_pot)
             upstream_width = int(atomic_model.descriptor.get_dim_out())
             fitting = atomic_model.fitting_net
             resolved_neuron = tuple(int(value) for value in fitting.neuron)
@@ -297,16 +320,21 @@ class DeepMDPTReadoutInputExporter:
 
     def _fitting_last_layer(self, inputs: dict[str, Any]) -> np.ndarray:
         self._set_terminal_case(inputs["case_index"])
+        arguments = (inputs["coords"], inputs["cells"], inputs["atom_types"])
+        options = {
+            "fparam": inputs["fparam"], "aparam": inputs["aparam"],
+            "mixed_type": False, "dtype": "fp32",
+        }
         try:
-            raw = self.readout_model.eval_fitting_last_layer(
-                inputs["coords"],
-                inputs["cells"],
-                inputs["atom_types"],
-                fparam=inputs["fparam"],
-                aparam=inputs["aparam"],
-                mixed_type=False,
-                dtype="fp32",
-            )
+            embedding = getattr(self.readout_model, "eval_embedding", None)
+            if callable(embedding):
+                try:
+                    _descriptor, raw, _structural_feature = embedding(*arguments, **options)
+                except NotImplementedError:
+                    # Older archives expose only the legacy fitting hook.
+                    raw = self.readout_model.eval_fitting_last_layer(*arguments, **options)
+            else:
+                raw = self.readout_model.eval_fitting_last_layer(*arguments, **options)
         except (AttributeError, NotImplementedError) as exc:
             raise ValueError(
                 "DeepMD-PT readout source does not expose scalar fitting-last input"
@@ -392,7 +420,7 @@ class DeepMDPTReadoutInputExporter:
         backend_model = getattr(deep_eval, "_dpmodel", None)
         if backend_model is not None:
             candidates.append(backend_model)
-            atomic_model = backend_model.get_dp_atomic_model()
+            atomic_model = self._learned_atomic_model(self.terminal_model)
             candidates.extend((atomic_model, atomic_model.fitting_net))
         for candidate in candidates:
             setter = getattr(candidate, "set_case_embd", None)

@@ -125,7 +125,7 @@ def main() -> None:
         document = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         document += '<title>' + html.escape(title) + ' · DICE</title><style>'
         document += 'body{font:17px/1.65 system-ui,sans-serif;color:#172a3a;max-width:1050px;margin:0 auto;padding:30px}nav{display:flex;gap:15px;flex-wrap:wrap;border-bottom:1px solid #ccd4db;padding-bottom:18px}a{color:#145b89}h1{font-size:2.3em}h1,h2,h3{line-height:1.2}code,pre{font-family:ui-monospace,monospace;font-size:.9em}pre{background:#edf2f6;padding:18px;overflow:auto}code{background:#edf2f6}table{border-collapse:collapse;min-width:650px}td{border:1px solid #ccd4db;padding:10px;vertical-align:top}tr:first-child{font-weight:600}.table{overflow:auto}footer{border-top:1px solid #ccd4db;margin-top:40px;padding-top:12px;color:#526579}'
-        document += '</style><nav aria-label="Documentation">' + ' '.join(links) + '</nav><main>' + body + '</main><footer>DICE · release documentation 2026-11-02</footer></html>'
+        document += '</style><nav aria-label="Documentation">' + ' '.join(links) + '</nav><main>' + body + '</main><footer>DICE · release documentation updated 2026-11-11</footer></html>'
         target.write_text(document, encoding="utf-8")
     # Keep the documented schema example available in the standalone HTML tree.
     import shutil

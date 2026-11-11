@@ -5,8 +5,9 @@ native recipes and one complete DICE configuration for a
 DPA4 teacher / DPA4C student / LAMMPS workflow.
 
 First read [models and native environments](native-models.md). The workflow
-configuration below uses this snapshot's `dp --pt` adapters. The model guide
-explains the matching checkpoints and specialized backend requirements. For a CPU-only
+configuration below declares `cli: "pt"` for both roles; DICE selects `dp --pt`
+for DPA4 and `dp --pt-expt` for DPA4C student training/export. The model guide
+explains the matching checkpoints and runtime requirements. For a CPU-only
 installation/lifecycle check use the [mock](../examples/cpu_mock/README.md).
 
 ## 1. Supply the inputs

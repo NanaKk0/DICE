@@ -10,8 +10,10 @@ selects structures for the next first-principles labeling cycle.
 
 Official repository: [DICE software](https://github.com/NanaKk0/DICE)
 
-This software snapshot is dated **2026-11-02**. It contains the DICE runtime,
-user documentation, configuration guides and CPU examples.
+This software snapshot includes the **2026-11-11 DeepMD compatibility update**
+to the 2026-11-02 distribution. It contains the DICE runtime, user documentation,
+configuration guides and CPU examples. See the [DPA4/DPA4C compatibility notes](docs/deepmd-compatibility.md)
+for native presets, ZBL, readout and the known short-range numerical limits.
 
 ## Install
 

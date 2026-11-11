@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from workflow_backends.execution import run_operation, structured_result_stdout
+from workflow_core.model_families import deepmd_learned_model_config
 from workflow_runtime.lifecycle.environment import OperationContext
 
 FOUNDATION_TYPE_MAP_RESULT_PREFIX = "DICE_DEEPMD_FOUNDATION_TYPE_MAP="
@@ -43,14 +44,16 @@ def resolve_training_type_maps(
     model = native_recipe.get("model", {})
     if not isinstance(model, Mapping):
         raise TypeError("DeepMD foundation recipe model must be an object")
-    declared = model.get("type_map")
-    if declared is not None:
-        recipe_map = validated_type_map(declared, role="foundation recipe")
-        if recipe_map != native:
-            raise ValueError(
-                "DeepMD foundation recipe type_map must exactly preserve the "
-                f"foundation native map {native}; received {recipe_map}"
-            )
+    learned = deepmd_learned_model_config(model)
+    for component in (model,) if learned is model else (model, learned):
+        declared = component.get("type_map")
+        if declared is not None:
+            recipe_map = validated_type_map(declared, role="foundation recipe")
+            if recipe_map != native:
+                raise ValueError(
+                    "DeepMD foundation recipe type_map must exactly preserve the "
+                    f"foundation native map {native}; received {recipe_map}"
+                )
     return active, native
 
 

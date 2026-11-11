@@ -51,4 +51,8 @@ For DPA4/DPA4C, obtain the models and runtime from their respective
 projects and qualify your selected model/build combination.
 The [walkthrough](own-system.md) supplies a complete PT role profile;
 [native-models.md](native-models.md) gives the recorded stack, model-source
-links and the difference from the current upstream `pt-expt` interface.
+links and the mapping from DICE's `cli: "pt"` declaration to the native
+`--pt` and `--pt-expt` selectors. For the qualified newer build, set
+`DP_INTERFACE_PREC=high` in the native activation script. This selects interface
+precision and does not promote the model's internal weights to double precision.
+See the [compatibility notes](deepmd-compatibility.md) for the tested scope.
