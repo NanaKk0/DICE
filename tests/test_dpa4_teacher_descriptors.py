@@ -415,23 +415,23 @@ def test_dpa4_native_load_enables_deterministic_runtime_and_auto_neighbor_graph(
     monkeypatch.setitem(sys.modules, "deepmd", deepmd_module)
     monkeypatch.setitem(sys.modules, "deepmd.infer", infer_module)
     monkeypatch.delenv("CUBLAS_WORKSPACE_CONFIG", raising=False)
-    torch = __import__("torch")
-    previous = torch.are_deterministic_algorithms_enabled()
-    try:
-        DPA4ReadoutInputExporter(terminal, device="cuda")
+    deterministic_calls: list[bool] = []
+    torch_module = ModuleType("torch")
+    torch_module.use_deterministic_algorithms = deterministic_calls.append
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
 
-        assert __import__("os").environ["CUBLAS_WORKSPACE_CONFIG"] == ":4096:8"
-        assert torch.are_deterministic_algorithms_enabled()
-        assert calls == [(
-            str(terminal.resolve()),
-            {
-                "device": "cuda",
-                "auto_batch_size": False,
-                "neighbor_graph_method": "auto",
-            },
-        )]
-    finally:
-        torch.use_deterministic_algorithms(previous)
+    DPA4ReadoutInputExporter(terminal, device="cuda")
+
+    assert __import__("os").environ["CUBLAS_WORKSPACE_CONFIG"] == ":4096:8"
+    assert deterministic_calls == [True]
+    assert calls == [(
+        str(terminal.resolve()),
+        {
+            "device": "cuda",
+            "auto_batch_size": False,
+            "neighbor_graph_method": "auto",
+        },
+    )]
 
 
 def test_dpa4c_native_load_requests_auto_neighbor_graph(
@@ -453,7 +453,12 @@ def test_dpa4c_native_load_requests_auto_neighbor_graph(
     deepmd_module.infer = infer_module
     monkeypatch.setitem(sys.modules, "deepmd", deepmd_module)
     monkeypatch.setitem(sys.modules, "deepmd.infer", infer_module)
+    deterministic_calls: list[bool] = []
+    torch_module = ModuleType("torch")
+    torch_module.use_deterministic_algorithms = deterministic_calls.append
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
     DPA4ReadoutInputExporter(terminal, device="cuda", model_family="dpa4c")
+    assert deterministic_calls == [True]
     assert calls[0][1]["neighbor_graph_method"] == "auto"
     assert calls[0][1]["auto_batch_size"] is False
 
