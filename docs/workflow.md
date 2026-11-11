@@ -1,57 +1,85 @@
-# Workflow and artifacts
+# Understand the workflow
 
-`dice run.json` runs one explicitly configured iteration. Its lifecycle is:
+DICE alternates teacher-supervised student training and student-driven
+exploration. First-principles (FP) labels are external reference information;
+teacher labels are model predictions. Keep their origin distinct.
+
+An **iteration** adapts the teacher once and executes one or more student
+**rounds**. `dice run.json` advances the configured iteration. A later iteration
+is a later invocation with returned FP data and the preceding student history.
 
 ```text
-teach/train -> teach/screen -> teach/scan (single teacher only)
--> r0/train -> r0/sample -> r0/screen -> ... -> fp
-                                                -> fp/label (optional)
+External labelled bootstrap + explicitly retained FP returns
+    → teach/train: adapt teacher
+    → teach/screen: label/screen initial student geometries
+    → teach/scan: prepare reference (single teacher)
+    → r0/train → r0/sample → r0/screen
+    → r1/train → r1/sample → r1/screen → ...
+    → fp: select geometries for external calculations
+    → optional fp/label: run a supported local FP calculator
 ```
 
-`teach/train` prepares the teacher dataset membership and trains ordered model
-members. `teach/screen` prepares student training data using teacher labels.
-A single teacher also publishes its reusable GMM reference in `teach/scan`.
-Each round trains the student, samples structures and screens them for student
-training and FP candidacy. These are distinct destinations and can overlap.
+## What enters and leaves each step
 
-Screening is student-first. A single model uses empirical reference-tail support
-routing where applicable; a committee uses force-deviation evidence. The
-selector is applied after the route's eligibility gates. Pool/keep quotas set
-upper bounds on the eligible structures selected by each group.
+| Step | Input and action | Result used later |
+| --- | --- | --- |
+| Teacher training | Declared externally labelled baseline and FP returns | Adapted teacher and its train/validation membership |
+| Initial student preparation | Iter0 geometry bootstrap, or later-iter student carry-over | Teacher-labelled student starting population |
+| Student training | Current accumulated teacher-labelled student data | Student for this round's exploration |
+| Sampling | Declared seed geometries, conditions and native recipe | Observations to evaluate and screen |
+| Screening | Student proposals followed by teacher evaluation | Trusted additions for student training and FP candidates |
+| FP selection | Candidate pools from the configured rounds | `iterN/fp/selected.xyz` for external labelling |
 
-Explicit seed roles may share a stable `selection_group`; their samples are
-combined before the group quota. Per-round seed/condition activation changes
-which tasks participate while preserving the group boundary. Sampling tasks
-in each round use their declared seed inputs independently.
+A single model uses its training-reference support score where supported; a
+committee uses force-deviation evidence. The routes have different threshold
+units. Student training additions and FP candidates are separate destinations;
+teacher views may overlap. Selection quotas are upper bounds, not guarantees.
+See [configuration](configuration.md) for exact boundaries.
 
-## Inputs and outputs
+## Rounds, seeds and training policies
 
-The run directory contains `run.json`, all explicitly referenced relative
-inputs/recipes, `iterN/` and hidden `.dice_state/`. It can be outside the
-installed source tree. Canonical extxyz is the workflow structure format;
-native backend files provide execution evidence.
+`sample.round_count` repeats the declared seed/condition registry. Alternatively,
+`sample.rounds` activates declared subsets per round. A seed's
+`selection_group` determines the shared screening and FP quota: multiple
+conditions do not automatically multiply that group's quota.
 
-The default endpoint `iterN/fp/selected.xyz` hands selected geometries to an
-external labelling process. An empty selection is valid. Return labelled extxyz by declaring its
-path in a later iteration's `fp_data`; label/data conventions must match the
-chosen backend recipe and chemistry.
+Each sampling task starts from its declared seed input; successive rounds do
+not implicitly continue the last trajectory. Each executed train block applies
+its declared `from_scratch` or `foundation_finetune` policy. Dataset carry-over
+does not itself request a checkpoint restart or continued optimizer state.
 
-See [labelled-data schema and units](data.md), the
-[own-system adaptation guide](own-system.md), and the executable
-[next-iteration handoff](../examples/iteration_handoff/README.md). Keep prior
-iteration history in the same run root; later iterations relabel the prior
-final student predecessor. Teacher-reference inclusion is selected explicitly
-through `student.include_teacher_train_data`.
+A round can add zero training frames. The next round may then train on the
+same dataset. Inspect the realized populations before interpreting a completed
+iteration as model improvement.
 
-Explicit `fp.label` adds one same-host calculator operation and publishes
-`iterN/fp/label/labeled.xyz`. The ABACUS adapter requires an installation-specific
-native execution check.
+## Run directory and outputs
 
-Models retain validated native suffixes such as `.model`, `.pb`, `.pt2` and
-`.txt`. Published model presentations are regular files; use their declared
-format and validated suffix when loading them.
+Work in the directory containing `run.json`. Its relative paths identify your
+data, models and recipes. Outputs live in `iterN/`, while `.dice_state/`
+contains workflow-managed operational records.
 
-`iterN/status.log`, `iterN/dice.log`, backend logs and receipts are diagnostics.
-Only consumer-runnable canonical artifacts establish block completion.
-Default-on selection visualization is non-authoritative; tiny populations or
-missing optional diagnostic evidence may legitimately skip it.
+| Path | Purpose |
+| --- | --- |
+| `iterN/teach/train/dataset/train.xyz` | Current teacher train membership and single-teacher GMM reference population |
+| `iterN/r0/train/dataset/train.xyz` | Round-0 student train membership and its reference population |
+| `iterN/r0/sample/` | Native sampling results and observations |
+| `iterN/r0/screen/` | Published training additions and FP-candidate evidence |
+| `iterN/fp/selected.xyz` | Terminal unlabelled geometries; an empty selection is valid |
+| `iterN/fp/label/labeled.xyz` | Optional supported local FP operation's labelled return |
+| `iterN/status.log`, `iterN/dice.log` | Progress and scientific screening diagnostics |
+
+DICE validates the formal outputs needed by their consumers before reusing a
+block. Logs and optional visualization aid diagnosis but do not independently
+establish completion. [Recovery](recovery.md) explains ordinary continuation
+and deliberate suffix rebuilding.
+
+## Start the next iteration
+
+Keep the same run directory and prior student history. Compute FP labels using
+a consistent protocol, then explicitly declare successful nonempty returns in
+`fp_data`, increment `iter`, and set `student_train_bootstrap` to `[]`.
+Retain the external baseline and earlier FP files you still want in teacher
+training. The current teacher relabels the preceding final student population;
+`student.include_teacher_train_data` optionally adds current teacher train
+geometries. See [data conventions](data.md), the [scientific walkthrough](own-system.md)
+and the [executable handoff](../examples/iteration_handoff/README.md).

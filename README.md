@@ -1,97 +1,76 @@
 # DICE
 
-DICE (Distillation-driven Co-Evolution) coordinates teacher-guided,
-student-driven active learning for machine-learning force fields. A teacher
-labels and assesses structures, a student explores configurations, and DICE
-selects structures for the next first-principles labeling cycle.
+DICE (Distillation-driven Co-Evolution) coordinates active learning for
+machine-learning interatomic potentials. A teacher labels structures, a
+student explores configurations, and DICE selects candidates for new
+first-principles (FP) calculations. Returned FP labels improve a later iteration.
 
-[Get started](examples/cpu_mock/README.md) ·
-[User guide](docs/workflow.md)
+| Your task | Start here |
+| --- | --- |
+| Install DICE and try the workflow without GPUs | [Installation](docs/install.md) → [CPU quickstart](docs/quickstart.md) |
+| Run your own material with native engines | [Understand the workflow](docs/workflow.md) → [Your first scientific run](docs/own-system.md) |
+| Check a field, backend or recovery command | [Documentation directory](docs/index.md) |
 
-Official repository: [DICE software](https://github.com/NanaKk0/DICE)
+## Install and try
 
-This software snapshot includes the **2026-11-11 DeepMD compatibility update**
-to the 2026-11-02 distribution. It contains the DICE runtime, user documentation,
-configuration guides and CPU examples. See the [DPA4/DPA4C compatibility notes](docs/deepmd-compatibility.md)
-for native presets, ZBL, readout and the known short-range numerical limits.
-
-## Install
-
-Use Python 3.10 or newer in a separate control-plane environment:
+DICE's control environment requires Python 3.10 or newer on Linux. From a
+shell with your chosen Python available:
 
 ```sh
+git clone https://github.com/NanaKk0/DICE.git
+cd DICE
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[test]'
+python -m pip install .
 dice --help
-python -m pytest -q
+python examples/cpu_mock/run.py /tmp/dice-first-demo
 ```
 
-Installation supplies DICE and its Python control-plane dependencies. Install
-the engines needed by your workflow—MACE, DeePMD-kit, NEP/GPUMD, LAMMPS,
-CP2K or ABACUS—in separate environments and connect them through an
-environment profile. The baseline operating platform is Linux;
-native backend, CUDA and scheduler compatibility is installation-specific.
+Choose a new or empty demo directory. This example runs two rounds with
+synthetic models, labels and trajectories. It checks the real workflow's
+coordination and recovery; it does not train a scientific potential.
+The [quickstart](docs/quickstart.md) explains its outputs and continuation.
 
-## Try the CPU-only mock example
+## Run a scientific iteration
 
-```sh
-python examples/cpu_mock/run.py /tmp/dice-mock-demo
-python examples/cpu_mock/run.py /tmp/dice-mock-demo --reuse
-```
-
-The first command creates tiny synthetic inputs in a new directory and runs
-the real lifecycle with injected fake backend services. The second verifies
-ordinary continuation of its completed result. All generated models, labels
-and trajectories are synthetic CPU fixtures for learning the workflow.
-See [the example guide](examples/cpu_mock/README.md).
-
-## Run a scientific workflow
-
-The sole public workflow interface is `dice run.json`:
+Install the engines required by your selected teacher, student and sampler
+separately. Prepare labelled bootstrap data, starting geometries, compatible
+models and native recipes. In the scientific run directory:
 
 ```sh
-cd /path/to/your/run-directory
 dice run.json --environment environment.json --preflight
 dice run.json --environment environment.json
 ```
 
-One invocation executes one iteration:
+One invocation executes one iteration, containing the configured student rounds:
 
 ```text
-teach/train -> teach/screen -> teach/scan (single teacher only)
--> r0/train -> r0/sample -> r0/screen -> ... -> fp
+teach/train → teach/screen → teach/scan (single teacher)
+            → r0/train → r0/sample → r0/screen
+            → r1/train → r1/sample → r1/screen → fp
 ```
 
-The default terminal artifact is `iterN/fp/selected.xyz` for external labeling.
-Return labeled extxyz through `fp_data` in a later iteration. Explicit
-`fp.label` instead appends one optional same-host `fp/label` block.
+The default endpoint is `iterN/fp/selected.xyz`, for external FP labelling.
+A later invocation declares the returned labels in `fp_data`. An explicit
+`fp.label` can instead append a supported local calculator operation.
+See the [complete DPA4/DPA4C walkthrough](docs/own-system.md).
 
-For your own material, follow [Run DICE on your own system](docs/own-system.md).
-It includes a complete scientific configuration, PT environment bindings,
-native-recipe responsibilities and the external-DFT return step. Consult
-[model sources and native versions](docs/native-models.md) first.
-Obtain pretrained DPA4/DPA4C models from their official projects when selecting
-foundation fine-tuning, and prepare native recipes for your selected models
-and material.
+## Models and compatibility
 
-## Documentation
+Teachers use MACE/MACE-LES or DeepMD; students use DeepMD or NEP. DeepMD
+students sample through LAMMPS, and NEP students through GPUMD. Exact model,
+build and execution requirements are in the [capability matrix](docs/support.md)
+and [model guide](docs/native-models.md).
 
-- [Installation and backend boundaries](docs/install.md)
-- [Workflow and artifacts](docs/workflow.md)
-- [Scientific configuration](docs/configuration.md)
-- [Environment and execution profiles](docs/environments.md)
-- [Recovery and diagnostics](docs/recovery.md)
-- [Support and qualification matrix](docs/support.md)
-- [Development and third-party credit](docs/development.md)
+The 2026-11-11 update adds newer DeepMD preset and ZBL/readout compatibility.
+DPA4 retains strict short-distance numerical limitations; see the
+[compatibility notes](docs/deepmd-compatibility.md) before collision studies.
+Foundation weights and native engine binaries are obtained separately.
 
-Build the dependency-free documentation website with
-`python tools/build_docs.py`; open `_site/index.html`, or serve `_site/` with
-`python -m http.server --directory _site 8000`. The optional GitHub Pages
-workflow is manually triggered after the authors configure hosting.
+## Development and licences
 
-## Licences
+Install `python -m pip install -e '.[test]'` to run `python -m pytest -q`.
+See [development](docs/development.md) for documentation builds and testing.
 
-Source code is licensed under MIT. Author-owned data, figures and documentation
-are licensed under CC BY 4.0.
-See [LICENSING.md](LICENSING.md) for scope and attribution.
+Code is MIT; author-owned documentation, figures and data use CC BY 4.0.
+Third-party components retain their own licences. See [LICENSING.md](LICENSING.md).
