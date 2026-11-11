@@ -44,7 +44,7 @@ and the sampling recipe. It then checks:
   inclusion explicitly when it is part of the intended training design.
 - Required energy/force labels are valid.
 
-The companion `tests/test_documented_contracts.py` also checks that empty
+The bundled `tests/test_documented_contracts.py` also checks that empty
 later-iter FP declarations are rejected by the real loader and that the
 example refuses to overwrite an existing nonempty run directory.
 
