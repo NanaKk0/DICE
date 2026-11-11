@@ -42,6 +42,7 @@ activated your DICE control environment; native engines use their own profiles.
 | [Troubleshooting](troubleshooting.md) | Diagnose common input, model, environment and screening failures |
 | [Recovery](recovery.md) | Continue after interruption or rebuild an explicitly selected suffix |
 | [Capabilities](support.md) | Check backend requirements and qualification boundaries |
+| [Changes](changelog.md) | Source-distribution updates and compatibility history |
 | [Development](development.md) | Run tests, build documentation and understand package responsibilities |
 
 ## Executable examples

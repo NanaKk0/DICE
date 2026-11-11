@@ -26,7 +26,7 @@ def test_cpu_mock_lifecycle_and_exact_suffix_recovery(tmp_path):
         assert f"{block} [SUCCESS]" in status
 
 
-def test_documentation_build_is_local_and_dependency_free(tmp_path):
+def test_documentation_build_has_local_output(tmp_path):
     subprocess.run([sys.executable, str(ROOT / "tools/build_docs.py"), "--output", str(tmp_path / "site")], check=True)
     assert (tmp_path / "site/index.html").is_file()
     assert (tmp_path / "site/docs/recovery.html").is_file()

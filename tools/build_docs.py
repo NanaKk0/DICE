@@ -1,140 +1,140 @@
-"""Render the curated Markdown documentation with Python's standard library."""
+"""Build the portable documentation with Python-Markdown and local assets."""
 from __future__ import annotations
 
 import argparse
 import html
-import re
+from html.parser import HTMLParser
+import os
 from pathlib import Path
+import re
+import shutil
+from urllib.parse import urlsplit, unquote
+
+import markdown
 
 ROOT = Path(__file__).resolve().parents[1]
-# Resolve the file list relative to the distribution, not the caller's cwd.
-PAGES = [Path("README.md"), *[p.relative_to(ROOT) for p in sorted((ROOT / "docs").glob("*.md"))], Path("examples/cpu_mock/README.md"), Path("examples/iteration_handoff/README.md")]
+
+
+def pages(root: Path) -> list[Path]:
+    candidates = [Path('README.md'), *[p.relative_to(root) for p in sorted((root/'docs').glob('*.md'))],
+                  Path('examples/cpu_mock/README.md'), Path('examples/iteration_handoff/README.md'),
+                  Path('LICENSING.md'), Path('LICENSE-DATA.md')]
+    return [p for p in candidates if (root/p).is_file()]
 
 
 def target_path(relative: Path) -> Path:
-    return Path("index.html") if relative == Path("README.md") else relative.with_suffix(".html")
+    return Path('index.html') if relative == Path('README.md') else relative.with_suffix('.html')
 
 
-def inline(text: str) -> str:
-    tokens: list[str] = []
-
-    def stash(value: str) -> str:
-        tokens.append(value)
-        return f"\x00{len(tokens) - 1}\x00"
-
-    text = re.sub(r"`([^`]+)`", lambda m: stash("<code>" + html.escape(m[1]) + "</code>"), text)
-
-    def link(match: re.Match) -> str:
-        href = match[2]
-        if href.lower().startswith(("javascript:", "data:")):
-            return html.escape(match[1])
-        href = re.sub(r"\.md(?=($|#))", ".html", href)
-        if href == "../README.html":
-            href = "../index.html"
-        return stash(f'<a href="{html.escape(href, quote=True)}">{html.escape(match[1])}</a>')
-
-    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", link, text)
-    text = html.escape(text)
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    return re.sub(r"\x00(\d+)\x00", lambda m: tokens[int(m[1])], text)
+def render(text: str) -> str:
+    return markdown.markdown(text, extensions=['fenced_code', 'tables', 'toc', 'sane_lists'], output_format='html')
 
 
-def render(markdown: str) -> str:
-    output: list[str] = []
-    paragraph: list[str] = []
-    code: list[str] | None = None
-    listing = False
-    table = False
+class Links(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+        self.ids = set()
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if 'id' in values:
+            self.ids.add(values['id'])
+        key = 'href' if tag == 'a' else 'src' if tag == 'img' else None
+        if key and key in values:
+            self.links.append(values[key])
 
-    def flush() -> None:
-        if paragraph:
-            output.append("<p>" + inline(" ".join(paragraph)) + "</p>")
-            paragraph.clear()
 
-    for line in markdown.splitlines():
-        if line.startswith("```"):
-            flush()
-            if code is None:
-                code = []
-            else:
-                output.append("<pre><code>" + html.escape("\n".join(code)) + "</code></pre>")
-                code = None
-            continue
-        if code is not None:
-            code.append(line)
-            continue
-        is_list = line.startswith("- ")
-        is_table = line.startswith("|")
-        if listing and not is_list:
-            output.append("</ul>")
-            listing = False
-        if table and not is_table:
-            output.append("</tbody></table></div>")
-            table = False
-        if not line.strip():
-            flush()
-        elif line.startswith("#"):
-            flush()
-            heading, title = line.split(" ", 1)
-            level = min(len(heading), 6)
-            output.append(f"<h{level}>" + inline(title) + f"</h{level}>")
-        elif is_list:
-            flush()
-            if not listing:
-                output.append("<ul>")
-                listing = True
-            output.append("<li>" + inline(line[2:]) + "</li>")
-        elif is_table:
-            flush()
-            cells = [cell.strip() for cell in line.strip("|").split("|")]
-            if all(re.fullmatch(r":?-+:?", cell) for cell in cells):
-                continue
-            if not table:
-                output.append('<div class="table"><table><tbody>')
-                table = True
-            output.append("<tr>" + "".join("<td>" + inline(cell) + "</td>" for cell in cells) + "</tr>")
+def local_target(root: Path, page: Path, href: str):
+    parsed = urlsplit(html.unescape(href))
+    if parsed.scheme or parsed.netloc:
+        return None
+    path = unquote(parsed.path)
+    candidate = ((root/page).parent/path).resolve() if path else (root/page).resolve()
+    if candidate != root.resolve() and root.resolve() not in candidate.parents:
+        raise ValueError(f'{page}: link escapes documentation root: {href}')
+    return candidate.relative_to(root.resolve()), unquote(parsed.fragment)
+
+
+def rewrite_links(body: str, root: Path, page: Path) -> str:
+    def replacement(match):
+        href = html.unescape(match[2])
+        resolved = local_target(root, page, href)
+        if resolved is None:
+            return match[0]
+        relative, fragment = resolved
+        if relative.suffix == '.md':
+            destination = target_path(relative)
         else:
-            paragraph.append(line.strip())
-    flush()
-    if listing:
-        output.append("</ul>")
-    if table:
-        output.append("</tbody></table></div>")
-    return "\n".join(output)
+            destination = relative
+        url = os.path.relpath(destination, target_path(page).parent)
+        if fragment:
+            url += '#' + fragment
+        return match[1] + html.escape(url, quote=True) + match[3]
+    return re.sub(r'((?:href|src)=")([^"]*)(")', replacement, body)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "_site")
-    args = parser.parse_args()
-    destination = args.output.resolve()
-    destination.mkdir(parents=True, exist_ok=True)
-    import os
-    for relative in PAGES:
-        target = destination / target_path(relative)
-        target.parent.mkdir(parents=True, exist_ok=True)
+def navigation(root: Path, page: Path) -> str:
+    groups = [('Start', [('Home', Path('README.md')), ('All guides', Path('docs/index.md'))])]
+    directory = root/'docs/index.md'
+    if directory.is_file():
+        for line in directory.read_text().splitlines():
+            if line.startswith('## '):
+                groups.append((line[3:], []))
+            for label, href in re.findall(r'\[([^\]]+)\]\(([^)]+)\)', line):
+                target = local_target(root, Path('docs/index.md'), href)
+                if target is not None and target[0].suffix == '.md':
+                    groups[-1][1].append((label, target[0]))
+    sections = []
+    seen = set()
+    for title, entries in groups:
         links = []
-        for page in PAGES:
-            label = "Home" if page == Path("README.md") else page.stem.title()
-            if page.parts[0] == "examples":
-                label = {"cpu_mock": "CPU mock", "iteration_handoff": "FP handoff"}[page.parts[1]]
-            url = os.path.relpath(destination / target_path(page), target.parent)
-            links.append(f'<a href="{html.escape(url)}">{html.escape(label)}</a>')
-        body = render((ROOT / relative).read_text(encoding="utf-8"))
-        title = (ROOT / relative).read_text(encoding="utf-8").splitlines()[0].lstrip("# ")
-        document = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-        document += '<title>' + html.escape(title) + ' · DICE</title><style>'
-        document += 'body{font:17px/1.65 system-ui,sans-serif;color:#172a3a;max-width:1050px;margin:0 auto;padding:30px}nav{display:flex;gap:15px;flex-wrap:wrap;border-bottom:1px solid #ccd4db;padding-bottom:18px}a{color:#145b89}h1{font-size:2.3em}h1,h2,h3{line-height:1.2}code,pre{font-family:ui-monospace,monospace;font-size:.9em}pre{background:#edf2f6;padding:18px;overflow:auto}code{background:#edf2f6}table{border-collapse:collapse;min-width:650px}td{border:1px solid #ccd4db;padding:10px;vertical-align:top}tr:first-child{font-weight:600}.table{overflow:auto}footer{border-top:1px solid #ccd4db;margin-top:40px;padding-top:12px;color:#526579}'
-        document += '</style><nav aria-label="Documentation">' + ' '.join(links) + '</nav><main>' + body + '</main><footer>DICE · release documentation updated 2026-11-11</footer></html>'
-        target.write_text(document, encoding="utf-8")
-    # Keep the documented schema example available in the standalone HTML tree.
-    import shutil
-    data_asset = destination / "examples/data/labelled_h2.extxyz"
-    data_asset.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(ROOT / "examples/data/labelled_h2.extxyz", data_asset)
-    (destination / ".nojekyll").touch()
-    print(f"Built {len(PAGES)} static documentation pages in {destination}")
+        for label, relative in entries:
+            if relative in seen or not (root/relative).is_file():
+                continue
+            seen.add(relative)
+            url = os.path.relpath(target_path(relative), target_path(page).parent)
+            links.append(f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>')
+        if links:
+            sections.append('<section><strong>'+html.escape(title)+'</strong>'+''.join(links)+'</section>')
+    return ''.join(sections)
 
 
-if __name__ == "__main__":
+def build(root: Path, destination: Path) -> int:
+    root, destination = root.resolve(), destination.resolve()
+    if destination == root or destination in root.parents:
+        raise ValueError('output must not replace the documentation input root')
+    destination.mkdir(parents=True, exist_ok=True)
+    all_pages = pages(root)
+    for relative in all_pages:
+        text = (root/relative).read_text(encoding='utf-8')
+        body = render(text)
+        parser = Links();parser.feed(body)
+        for href in parser.links:
+            resolved = local_target(root, relative, href)
+            if resolved is not None:
+                asset = resolved[0]
+                if asset.suffix != '.md' and (root/asset).is_file():
+                    out = destination/asset;out.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(root/asset, out)
+        title = text.splitlines()[0].lstrip('# ')
+        document = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        document += '<title>'+html.escape(title)+' · DICE</title><style>'
+        document += 'body{font:16px/1.65 system-ui,sans-serif;color:#172a3a;margin:0;display:grid;grid-template-columns:240px minmax(0,960px);gap:32px;padding:24px}nav section{margin-bottom:18px}nav a{display:block}a{color:#145b89}h1,h2,h3{line-height:1.25;scroll-margin-top:20px}pre{background:#edf2f6;padding:16px;overflow:auto}code{font-size:.9em}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #ccd4db;padding:8px;text-align:left}footer{border-top:1px solid #ccd4db;margin-top:30px}img{max-width:100%}@media(max-width:800px){body{display:block}nav{border-bottom:1px solid #ccd4db;margin-bottom:24px}}'
+        document += '</style></head><body><nav aria-label="Documentation">'+navigation(root, relative)+'</nav><main>'+rewrite_links(body, root, relative)+'</main></body></html>'
+        out = destination/target_path(relative);out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(document, encoding='utf-8')
+    (destination/'.nojekyll').touch()
+    print(f'Built {len(all_pages)} documentation pages in {destination}')
+    return len(all_pages)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=ROOT)
+    parser.add_argument('--output', type=Path, default=ROOT/'_site')
+    args = parser.parse_args()
+    build(args.root, args.output)
+
+
+if __name__ == '__main__':
     main()

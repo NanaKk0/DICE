@@ -70,7 +70,8 @@ Foundation weights and native engine binaries are obtained separately.
 ## Development and licences
 
 Install `python -m pip install -e '.[test]'` to run `python -m pytest -q`.
-See [development](docs/development.md) for documentation builds and testing.
+See [development](docs/development.md) for documentation builds and testing,
+and [changes](docs/changelog.md) for source-distribution updates.
 
 Code is MIT; author-owned documentation, figures and data use CC BY 4.0.
 Third-party components retain their own licences. See [LICENSING.md](LICENSING.md).
