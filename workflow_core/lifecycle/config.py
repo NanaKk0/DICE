@@ -3,12 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import json
 import math
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 from typing import Any
 
 from ase.data import atomic_numbers
 
+from workflow_core.common.lammps_control import LammpsSamplingOptions
+from workflow_core.common.native_protocol import NativeProtocolRequest
 from workflow_core.common.widom import WidomSamplingParameters
 from workflow_core.common.md_mc import IdentitySwapParameters
 from workflow_core.common.gcmc import GcmcMdParameters, GcmcSamplingParameters
@@ -263,7 +265,7 @@ def _validate_sampler_plan(
             unsupported = tuple(
                 group.kind
                 for group in plan.condition_groups
-                if group.kind not in {"neb", "relax", "nvt", "npt"}
+                if group.kind not in {"native", "neb", "relax", "nvt", "npt"}
             )
             if unsupported:
                 raise ValueError(
@@ -386,8 +388,14 @@ def _resolve_explicit_sampling_plan(
             raise ValueError(f"invalid condition group id {group_id!r}")
         if not isinstance(declaration, dict):
             raise ValueError(f"{prefix} must be an object")
-        kind = declaration.get("kind")
-        if kind not in {"neb", "relax", "nvt", "npt", "nvt_program", "nvt_cell_program", "npt_program", "gcmc_md", "widom", "md_mc"}:
+        kind = declaration.get("kind", 'native')
+        native_protocol = kind == 'native' or (
+            kind in {'nvt', 'npt'} and (
+                (config.sampler['backend'] == 'LAMMPS' and 'mode' not in declaration.get('lammps', {}).get('control', {}))
+                or any(name in declaration for name in ('targets', 'timestep_ps', 'trajectory_every_steps'))
+                or 'temperatures_k' not in declaration or 'steps' not in declaration
+                or (kind == 'npt' and 'pressures_bar' not in declaration)))
+        if kind not in {"native", "neb", "relax", "nvt", "npt", "nvt_program", "nvt_cell_program", "npt_program", "gcmc_md", "widom", "md_mc"}:
             raise ValueError(
                 f"{prefix}.kind must be one of "
                 "['gcmc_md', 'md_mc', 'neb', 'npt', 'npt_program', 'nvt', 'nvt_cell_program', 'nvt_program', 'relax', 'widom']"
@@ -429,11 +437,27 @@ def _resolve_explicit_sampling_plan(
             )
         if kind in {"npt", "npt_program"}:
             allowed.add("pressures_bar")
+        if native_protocol:
+            allowed |= {'pressures_bar', 'targets', 'timestep_ps', 'trajectory_every_steps', 'inputs'}
         if kind == 'md_mc':
             allowed |= {'ensemble', 'mc'}
             if declaration.get('ensemble') == 'npt':
                 allowed.add('pressures_bar')
+        if kind in {'nvt', 'npt'} and config.sampler['backend'] == 'LAMMPS':
+            allowed.add('lammps')
         _mapping_fields(declaration, allowed, prefix)
+        if 'inputs' in declaration:
+            inputs = declaration['inputs']
+            if not isinstance(inputs, dict):
+                raise ValueError(f'{prefix}.inputs must map native relative names to source paths')
+            for destination, source in inputs.items():
+                if (not isinstance(destination, str) or not destination
+                    or PurePosixPath(destination).is_absolute() or '\\' in destination
+                    or any(part in {'', '.', '..'} for part in destination.split('/'))):
+                    raise ValueError(f'{prefix}.inputs requires contained native relative names')
+                _relative_path(config, source, f'{prefix}.inputs.{destination}')
+        lammps_options = (LammpsSamplingOptions.from_payload(declaration['lammps'], prefix=f'{prefix}.lammps')
+                          if 'lammps' in declaration else None)
         if kind not in {"neb", "relax", "gcmc_md", "widom"}:
             _relative_path(config, declaration.get("recipe"), f"{prefix}.recipe")
         raw_assignment = declaration.get("seeds")
@@ -464,6 +488,7 @@ def _resolve_explicit_sampling_plan(
         gcmc_parameters: GcmcSamplingParameters | None = None
         widom_parameters = None
         md_mc_parameters = None
+        protocol_request = None
         if kind == 'md_mc':
             if declaration.get('ensemble') not in {'nvt', 'npt'}:
                 raise ValueError(f'{prefix}.ensemble must be nvt or npt')
@@ -692,6 +717,28 @@ def _resolve_explicit_sampling_plan(
                 if kind == "npt_program"
                 else (program.segments,)
             )
+        elif native_protocol:
+            temperatures = (_temperature_group(declaration['temperatures_k'], f'{prefix}.temperatures_k')
+                            if 'temperatures_k' in declaration else ())
+            pressures = (_pressure_group(declaration['pressures_bar'], f'{prefix}.pressures_bar')
+                         if 'pressures_bar' in declaration else ())
+            steps_by_round = (_explicit_round_steps(declaration['steps'], round_count, f'{prefix}.steps')
+                              if 'steps' in declaration else (None,) * round_count)
+            targets = declaration.get('targets', {})
+            _mapping_fields(targets, {'thermostat', 'barostat', 'run'}, f'{prefix}.targets')
+            controls = {} if lammps_options is None else {
+                name: getattr(lammps_options, name) for name in (
+                    'group', 'temperature_damping_ps', 'pressure_damping_ps', 'pressure_coupling')}
+            if lammps_options is not None and lammps_options.fix_id is not None:
+                if 'thermostat' in targets and targets['thermostat'] != lammps_options.fix_id:
+                    raise ValueError(f'{prefix}: targets.thermostat conflicts with lammps.control.fix_id')
+                targets = {**targets, 'thermostat': lammps_options.fix_id}
+            protocol_request = NativeProtocolRequest(ensemble=None if kind == 'native' else kind,
+                timestep_ps=declaration.get('timestep_ps', lammps_options.timestep_ps if lammps_options else None),
+                trajectory_every_steps=declaration.get('trajectory_every_steps', lammps_options.trajectory_every_steps if lammps_options else None),
+                **controls, **targets)
+            normalized_conditions = tuple((temperature, pressure)
+                for temperature in (temperatures or (None,)) for pressure in (pressures or (None,)))
         else:
             temperatures = _temperature_group(
                 declaration.get("temperatures_k"), f"{prefix}.temperatures_k"
@@ -714,7 +761,7 @@ def _resolve_explicit_sampling_plan(
         recipe = None if kind in {"neb", "relax", "gcmc_md", "widom"} else str(declaration["recipe"])
         for role_id in role_ids:
             for condition in normalized_conditions:
-                key = (role_id, recipe, kind, condition, steps_by_round, md_mc_parameters)
+                key = (role_id, recipe, kind, condition, steps_by_round, md_mc_parameters, lammps_options, protocol_request)
                 if key in duplicate_keys:
                     raise ValueError(f"{prefix} creates a duplicate effective native task")
                 duplicate_keys.add(key)
@@ -731,7 +778,9 @@ def _resolve_explicit_sampling_plan(
                 relax=relax_parameters,
                 gcmc=gcmc_parameters,
                 widom=widom_parameters,
+                lammps=lammps_options,
                 md_mc=md_mc_parameters,
+                protocol_request=protocol_request,
             )
         )
     neb_role_ids = {

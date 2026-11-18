@@ -1,0 +1,81 @@
+{
+  "iter": 0,
+  "teacher_train_bootstrap": [
+    "data/teacher.extxyz"
+  ],
+  "student_train_bootstrap": [
+    "data/student.extxyz"
+  ],
+  "fp_data": [],
+  "teacher": {
+    "backend": "MACE",
+    "model": "single",
+    "type_map": [
+      "Zr",
+      "Y",
+      "O"
+    ],
+    "recipe": "recipes/teacher.yaml",
+    "policy": "from_scratch",
+    "valid_frac": 0.0
+  },
+  "student": {
+    "backend": "DeepMD",
+    "cli": "pt",
+    "model": "single",
+    "type_map": [
+      "Zr",
+      "Y",
+      "O"
+    ],
+    "recipe": "recipes/student.json",
+    "policy": "from_scratch",
+    "valid_frac": 0.0
+  },
+  "sampler": {
+    "backend": "LAMMPS"
+  },
+  "sample": {
+    "round_count": 1,
+    "seeds": {
+      "ysz": {
+        "source": "data/ysz.extxyz",
+        "selection_group": "YSZ_all"
+      }
+    },
+    "condition_groups": {
+      "ysz_swap": {
+        "kind": "md_mc",
+        "ensemble": "nvt",
+        "seeds": [
+          "ysz"
+        ],
+        "temperatures_k": [
+          1773
+        ],
+        "steps": 100000,
+        "recipe": "recipes/ysz-nvt-swap.in",
+        "mc": {
+          "move": "identity_swap",
+          "elements": [
+            "Y",
+            "Zr"
+          ],
+          "every_md_steps": 10,
+          "attempts_per_event": 1
+        }
+      }
+    }
+  },
+  "screen": {
+    "pool": 2,
+    "keep": 1,
+    "fp_pool": 2,
+    "policy": "random"
+  },
+  "fp": {
+    "keep": 1,
+    "policy": "random"
+  },
+  "visualize": false
+}

@@ -71,17 +71,25 @@ class _HybridObservationSource:
         missing = tuple(value for value in identities if value not in self._owner)
         if missing:
             raise ValueError(f"mixed sampling replay identity is absent: {missing[0]}")
-        output: list[object] = []
-        for identity in identities:
-            chunks = tuple(self._owner[identity].replay((identity,), chunk_size=1))
-            if len(chunks) != 1 or len(chunks[0]) != 1:
-                raise ValueError("mixed sampling replay source returned ambiguous evidence")
-            output.append(chunks[0][0])
-            if len(output) == size:
-                yield tuple(output)
-                output = []
-        if output:
-            yield tuple(output)
+        for start in range(0, len(identities), size):
+            window = identities[start:start + size]
+            # A replay request is an I/O batch. Preserve that batch when
+            # dispatching to native stores, then restore the caller's order.
+            owners: dict[int, tuple[object, list[str]]] = {}
+            for identity in window:
+                owner = self._owner[identity]
+                owners.setdefault(id(owner), (owner, []))[1].append(identity)
+            loaded = {}
+            for owner, requested in owners.values():
+                actual = []
+                for chunk in owner.replay(tuple(requested), chunk_size=size):
+                    for frame in chunk:
+                        identity = str(frame.info.get('structure_id', ''))
+                        actual.append(identity)
+                        loaded[identity] = frame
+                if tuple(actual) != tuple(requested):
+                    raise ValueError("mixed sampling replay source returned ambiguous evidence")
+            yield tuple(loaded[identity] for identity in window)
 
 
 @dataclass(frozen=True, slots=True)

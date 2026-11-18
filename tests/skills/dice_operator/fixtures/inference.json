@@ -1,0 +1,73 @@
+{
+  "schema": "dice.execution-profile",
+  "targets": {
+    "local": {
+      "adapter": "local",
+      "max_in_flight": 1
+    }
+  },
+  "target_pools": {
+    "local": {
+      "targets": [
+        "local"
+      ]
+    }
+  },
+  "resource_classes": {
+    "inference": {
+      "nodes": 1,
+      "processes_per_node": 1,
+      "gpus_per_node": 4,
+      "cpus_per_process": 8,
+      "memory_mb": 32768,
+      "wall_time_seconds": 3600,
+      "launcher": {
+        "kind": "direct"
+      },
+      "mode": "pool",
+      "per_gpu": 1
+    }
+  },
+  "bindings": [
+    {
+      "operation_role": "student.deepmd.pt.gmm_screen",
+      "resource_class": "inference",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "student.deepmd.tf.gmm_score",
+      "resource_class": "inference",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "student.nep.gmm_score",
+      "resource_class": "inference",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "teacher.deepmd.pt.gmm_score",
+      "resource_class": "inference",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "teacher.deepmd.pt.label",
+      "resource_class": "inference",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "teacher.deepmd.tf.label",
+      "resource_class": "inference",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "teacher.mace.gmm_score",
+      "resource_class": "inference",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "teacher.mace.label",
+      "resource_class": "inference",
+      "target_pool": "local"
+    }
+  ]
+}

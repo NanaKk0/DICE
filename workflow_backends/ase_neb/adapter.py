@@ -84,6 +84,9 @@ class _NebObservationSource:
             identity: ordinal for ordinal, identity in enumerate(identities)
         }
 
+        from workflow_backends.common.extxyz_replay import IndexedExtxyzReplay
+        self._replay = IndexedExtxyzReplay(sample_dir, self._records)
+
     @staticmethod
     def _record(row: dict[str, object]) -> ObservationRecord:
         task_index = int(row["task_index"])
@@ -102,7 +105,7 @@ class _NebObservationSource:
             system_id=str(row["selection_group_id"]),
             task_index=task_index,
             frame_index=int(row["frame_index"]),
-            md_step=optimizer_step,
+            md_step=None,
             student_uncertainty=float(row["force_deviation"]),
             locator=locator,
             sampling_role_id=str(row["sampling_role_id"]),
@@ -116,72 +119,8 @@ class _NebObservationSource:
     def catalog(self) -> tuple[ObservationRecord, ...]:
         return self._records
 
-    def replay(
-        self,
-        ordered_identities: Sequence[str],
-        *,
-        chunk_size: int,
-    ) -> Iterator[tuple[Atoms, ...]]:
-        size = int(chunk_size)
-        if size <= 0:
-            raise ValueError("NEB observation replay chunk_size must be positive")
-        identities = tuple(str(item) for item in ordered_identities)
-        if any(not item for item in identities) or len(set(identities)) != len(identities):
-            raise ValueError("NEB replay identities must be unique and non-empty")
-        missing = [
-            identity for identity in identities if identity not in self._record_by_identity
-        ]
-        if missing:
-            raise ValueError(
-                f"NEB replay identity is absent from the catalog: {missing[0]}"
-            )
-        ordinals = tuple(self._ordinal_by_identity[identity] for identity in identities)
-        source_ordered = all(
-            left < right for left, right in zip(ordinals, ordinals[1:])
-        )
-        scanned = self._scan_requested(identities)
-        if source_ordered:
-            chunk: list[Atoms] = []
-            actual: list[str] = []
-            for frame in scanned:
-                actual.append(str(frame.info.get("structure_id", "")))
-                chunk.append(frame)
-                if len(chunk) == size:
-                    yield tuple(chunk)
-                    chunk.clear()
-            if tuple(actual) != identities:
-                raise ValueError("NEB observation replay evidence is incomplete")
-            if chunk:
-                yield tuple(chunk)
-            return
-
-        loaded = {
-            str(frame.info.get("structure_id", "")): frame for frame in scanned
-        }
-        if set(loaded) != set(identities):
-            raise ValueError("NEB observation replay evidence is incomplete")
-        for start in range(0, len(identities), size):
-            chunk_ids = identities[start : start + size]
-            yield tuple(loaded[identity] for identity in chunk_ids)
-
-    def _scan_requested(self, identities: tuple[str, ...]) -> Iterator[Atoms]:
-        wanted = set(identities)
-        task_indices = sorted(
-            {
-                self._record_by_identity[identity].task_index
-                for identity in identities
-            }
-        )
-        for task_index in task_indices:
-            path = (
-                self._sample_dir
-                / "tasks"
-                / f"task_{task_index:06d}"
-                / "observations.extxyz"
-            )
-            for frame in iread(path, index=":"):
-                if str(frame.info.get("structure_id", "")) in wanted:
-                    yield frame
+    def replay(self, ordered_identities, *, chunk_size):
+        yield from self._replay.replay(ordered_identities, chunk_size=chunk_size)
 
 
 class AseNebSamplingNativeOps:
@@ -195,6 +134,7 @@ class AseNebSamplingNativeOps:
         operation_role: str,
         operation_profile_id: str,
         task_id_overrides: Mapping[str, str] | None = None,
+        known_task_ids: tuple[str, ...] | None = None,
         allow_empty_observations: bool = False,
         max_workers: int = 1,
     ) -> None:
@@ -203,6 +143,7 @@ class AseNebSamplingNativeOps:
         self.operation_role = str(operation_role)
         self.operation_profile_id = str(operation_profile_id)
         self.task_id_overrides = dict(task_id_overrides or {})
+        self.known_task_ids = known_task_ids
         self.allow_empty_observations = bool(allow_empty_observations)
         if (
             isinstance(max_workers, bool)
@@ -929,6 +870,8 @@ class AseNebSamplingNativeOps:
             )
             frame = source.copy()
             frame.calc = None
+            for key in ('md_step', 'md_steps', 'md_time_fs', 'timestep'):
+                frame.info.pop(key, None)
             frame.info.update(
                 system_id=task.selection_group_id,
                 structure_id=identity,
@@ -995,7 +938,7 @@ class AseNebSamplingNativeOps:
             raise FileNotFoundError(task_root)
         expected_dirs = tuple(task_root / task.task_id for task in tasks)
         actual_dirs = tuple(sorted(path for path in task_root.iterdir() if path.is_dir()))
-        known_names = {
+        known_names = set(self.known_task_ids) if self.known_task_ids is not None else {
             task.task_id
             for task in evidence.plan.tasks_for_round(evidence.round_index)
         }
@@ -1045,7 +988,8 @@ class AseNebSamplingNativeOps:
         require_success: bool,
     ) -> list[dict[str, object]]:
         context = self._read_json(task_dir / "task_context.json")
-        if context != expected_context:
+        from workflow_backends.common.task_context import matches_task_context
+        if not matches_task_context(context, expected_context):
             raise ValueError("NEB task context does not match the current task intent")
         result = self._read_json(task_dir / "neb_result.json")
         success = self._read_json(task_dir / "task_completion_receipt.json") if (task_dir / "task_completion_receipt.json").is_file() else None
@@ -1406,7 +1350,8 @@ class SubprocessAseNebSamplingNativeOps:
             )
             manifest = {
                 "schema": "dice.native.ase-neb-request",
-                "schema_revision": 4,
+                "schema_revision": 5,
+                "task_inventory": [task.task_id for task in evidence.plan.tasks_for_round(evidence.round_index)],
                 "run_json_path": str(evidence.run_json_path),
                 "iter": evidence.iter_index,
                 "round": evidence.round_index,

@@ -58,7 +58,8 @@ class GpumdSampler:
         )
         explicit=isinstance(effective_plan,ExplicitSamplingPlan)
         all_tasks=effective_plan.tasks_for_round(self.round_index) if explicit else effective_plan.tasks
-        indexed_tasks=tuple((index,task) for index,task in enumerate(all_tasks) if not explicit or task.kind!="neb")
+        indexed_tasks=tuple((index,task) for index,task in enumerate(all_tasks) if not explicit or (
+            task.kind not in {'neb','relax'} and task.protocol_request is None))
         if not indexed_tasks: raise ValueError("GPUMD sampling requires at least one active MD task")
         if explicit and any(task.kind not in {"nvt", "npt"} for _,task in indexed_tasks):
             raise ValueError("GPUMD supports only nvt and npt MD tasks")
@@ -67,6 +68,7 @@ class GpumdSampler:
             sources={str(key):Path(value) for key,value in group_recipes.items()}
             active_groups={task.condition_group_id for _,task in indexed_tasks}
             if not active_groups<=set(sources): raise ValueError("GPUMD group recipes must cover active MD groups")
+            sources={key:path for key,path in sources.items() if key in active_groups}
         else:
             if recipe is None or group_recipes is not None: raise ValueError("legacy GPUMD sampling requires one recipe")
             sources={"legacy":Path(recipe)}
@@ -173,16 +175,17 @@ class GpumdSampler:
         text=path.read_text(encoding="utf-8"); lines=[line.split("#",1)[0].strip().split() for line in text.splitlines()]; heads=[item[0].lower() for item in lines if item]
         if heads.count("velocity")!=1 or heads.count("ensemble")!=1 or heads.count("run")!=1 or "potential" in heads or "active" in heads: raise ValueError("GPUMD lifecycle recipe requires exactly one velocity, ensemble, and run; no potential or active")
     def _render(self,task:Path,source:Path,models:Sequence[str|Path],seed:Atoms,steps:int,temp:float,pressure:float|None,cadence:int)->None:
+        from workflow_core.common.native_protocol import NativeProtocolRequest
+        from workflow_backends.gpumd.native_protocol import compile_gpumd_protocol
         write_extxyz_structures(task / "model.xyz", [seed], allow_empty=False)
         names=[]
         for i,model in enumerate(models): target=task/f"nep_{i}.txt"; link_model_file(model,target); names.append(target.name)
         lines=[]
-        for line in source.read_text(encoding="utf-8").splitlines():
+        protocol=compile_gpumd_protocol(source.read_text(encoding='utf-8'),NativeProtocolRequest(
+            ensemble='nvt' if pressure is None else 'npt',temperature_k=temp,pressure_bar=pressure,steps=steps))
+        for line in protocol.splitlines():
             head=line.split()[0].lower() if line.split() else ""
-            if head=="velocity": lines.append(f"velocity {temp:g}")
-            elif head=="ensemble": lines.append(f"ensemble nvt_ber {temp:g} {temp:g} 100" if pressure is None else f"ensemble npt_ber {temp:g} {temp:g} 100 {pressure}")
-            elif head=="run": lines.append(f"run {steps}")
-            elif head=="dump_position": continue
+            if head=="dump_position": continue
             else: lines.append(line)
         lines=[*(f"potential {name}" for name in names),f"dump_position {cadence}",f"active {cadence} 1 1 1 0.0",*lines]; (task/"run.in").write_text("\n".join(lines)+"\n",encoding="utf-8")
     def _cadence(self,path:Path)->int:

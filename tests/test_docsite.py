@@ -15,13 +15,17 @@ def test_rendered_site_keeps_steps_code_and_heading_links(tmp_path):
             values = dict(attrs)
             if tag in ('h1','h2','h3') and 'id' in values:
                 self.ids.add(values['id'])
-    page = (tmp_path/'site/docs/install.html').read_text()
+    page = (tmp_path/'site/docs/getting-started/installation.html').read_text()
     parsed = Headings();parsed.feed(page)
-    assert 'obtain-and-install-the-control-package' in parsed.ids
+    assert 'install-dice' in parsed.ids
     assert '<pre><code' in page
-    assert '<ol>' in (tmp_path/'site/docs/first-principles.html').read_text()
     assert (tmp_path/'site/LICENSING.html').is_file()
     assert (tmp_path/'site/docs/index.html').is_file()
+    assert (tmp_path/'site/examples/dpa4_dpa4c/README.html').is_file()
+    assert (tmp_path/'site/examples/dpa4_dpa4c/data/NOTICE.html').is_file()
+    assert (tmp_path/'site/examples/dpa4_dpa4c/models/README.html').is_file()
+    assert (tmp_path/'site/skills/dice-operator/README.html').is_file()
+    assert (tmp_path/'site/skills/dice-operator/LICENSE-DATA.html').is_file()
     subprocess.run([sys.executable, str(ROOT/'tools/check_docs.py'), '--site', str(tmp_path/'site')], check=True)
 
 
@@ -32,6 +36,9 @@ def test_link_checker_detects_missing_files_and_heading_fragments(tmp_path):
     (root/'docs/guide.md').write_text('# Guide\n\n## Details\n\n1. First\n2. Second\n')
     command=[sys.executable,str(ROOT/'tools/check_docs.py'),'--root',str(root)]
     assert subprocess.run(command,capture_output=True).returncode == 0
+    site = tmp_path/'fixture-site'
+    subprocess.run([sys.executable,str(ROOT/'tools/build_docs.py'),'--root',str(root),'--output',str(site)], check=True)
+    assert '<ol>' in (site/'docs/guide.html').read_text()
     (root/'docs/guide.md').write_text('# Guide\n\n[Missing](absent.md)\n')
     failed=subprocess.run(command,capture_output=True,text=True)
     assert failed.returncode != 0

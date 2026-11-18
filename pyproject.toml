@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dice-workflow"
-version = "0.1.0"
+version = "0.2.0"
 description = "Distillation-driven co-evolution machine-learning force-field workflow"
 readme = "README.md"
 license = {file = "LICENSE"}

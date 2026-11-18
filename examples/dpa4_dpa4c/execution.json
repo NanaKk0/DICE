@@ -1,0 +1,48 @@
+{
+  "schema": "dice.execution-profile",
+  "targets": {
+    "local": {
+      "adapter": "local",
+      "max_in_flight": 1
+    }
+  },
+  "target_pools": {
+    "local": {
+      "targets": [
+        "local"
+      ]
+    }
+  },
+  "resource_classes": {
+    "gpu": {
+      "mode": "pool",
+      "per_gpu": 1,
+      "nodes": 1,
+      "processes_per_node": 1,
+      "gpus_per_node": 1,
+      "cpus_per_process": 4,
+      "memory_mb": 16384,
+      "wall_time_seconds": 3600,
+      "launcher": {
+        "kind": "direct"
+      }
+    }
+  },
+  "bindings": [
+    {
+      "operation_role": "teacher.deepmd.pt.train",
+      "resource_class": "gpu",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "student.deepmd.pt.train",
+      "resource_class": "gpu",
+      "target_pool": "local"
+    },
+    {
+      "operation_role": "sampler.lammps.pt",
+      "resource_class": "gpu",
+      "target_pool": "local"
+    }
+  ]
+}

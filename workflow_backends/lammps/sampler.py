@@ -16,6 +16,7 @@ from ase import Atoms
 from ase.data import atomic_masses, atomic_numbers
 import numpy as np
 from workflow_backends.common.model_files import link_model_file
+from workflow_backends.common.seed_selection import publish_seed_selection_manifest as _publish_seed_selection_manifest
 from workflow_backends.execution import operation_execution_scope
 from workflow_backends.common.task_outcomes import TaskOutcome, execute_task
 from workflow_backends.common.cancellation import handled_sigterm as _handled_sigterm
@@ -26,6 +27,7 @@ from workflow_backends.common.sampling_pool import (
 from workflow_backends.sample_artifacts import (
     CELL_PROGRAM_TASK_CONTEXT_SCHEMA_REVISION,
     CellProgramSampleTaskContext,
+    ControlledSampleTaskContext,
     MdMcSampleTaskContext,
     ExplicitSampleTaskContext,
     SampleTaskContext,
@@ -52,10 +54,11 @@ from workflow_backends.lammps.execution_mode import (
     command_for_mode,
     select_lammps_execution_mode,
 )
+from workflow_backends.lammps.control import render_lammps_control
+from workflow_backends.lammps.protocol import assemble_lammps_protocol
 from workflow_artifacts.lifecycle.sampling_models import EffectiveSamplingModelPlan
 from workflow_backends.sampling import (
     SamplingSeedSelection,
-    seed_selection_manifest_payload,
 )
 from workflow_artifacts.lifecycle.sample_conditions import SamplingPlan, SystemSamplingCondition
 from workflow_core.common.sampling_plan import ExplicitSamplingPlan
@@ -126,7 +129,7 @@ class LammpsSampler:
         indexed_round_tasks = tuple(
             (task_index, task)
             for task_index, task in enumerate(all_round_tasks)
-            if not explicit or task.kind not in {"neb", "relax", "gcmc_md", "widom"}
+            if not explicit or (task.kind not in {"neb", "relax", "gcmc_md", "widom"} and task.protocol_request is None)
         )
         round_tasks = tuple(task for _task_index, task in indexed_round_tasks)
         if not round_tasks:
@@ -145,7 +148,15 @@ class LammpsSampler:
                 active_condition_group_ids
             ),
         )
+        controlled_protocols = {}
         if explicit:
+            for condition in round_tasks:
+                if condition.lammps is not None:
+                    controlled_protocols[condition.task_id] = render_lammps_control(
+                        recipe_sources[condition.condition_group_id].read_text(), condition.lammps.to_payload(),
+                        ensemble=condition.ensemble, temperature=condition.temperature_k, pressure=condition.pressure_bar,
+                        steps=condition.steps, seed=explicit_task_seed(iter_index=self.iter_index,
+                            round_index=self.round_index, sampling_role_id=condition.sampling_role_id))
             groups = {
                 group.condition_group_id: group
                 for group in effective_plan.condition_groups
@@ -155,8 +166,10 @@ class LammpsSampler:
             )
             for group_id in active_condition_group_ids:
                 group = groups[group_id]
+                controlled = next((controlled_protocols[t.task_id] for t in round_tasks
+                    if t.condition_group_id == group_id and t.task_id in controlled_protocols), None)
                 self._validate_recipe(
-                    recipe_sources[group.condition_group_id], kind=group.kind,
+                    recipe_sources[group.condition_group_id], text=(controlled.text if controlled else None), kind=group.kind,
                     ensemble=('npt' if group.pressures_bar else 'nvt') if group.kind == 'md_mc' else None,
                 )
         else:
@@ -370,7 +383,8 @@ class LammpsSampler:
             source = recipe_sources[
                 condition.condition_group_id if explicit else condition.ensemble
             ]
-            cadence = self._cadence(source)
+            controlled = controlled_protocols.get(condition.task_id) if explicit else None
+            cadence = controlled.cadence if controlled else self._cadence(source)
             cell_history = (
                 resolve_cell_program_history(
                     selected,
@@ -411,6 +425,7 @@ class LammpsSampler:
                 program=(condition.program if explicit else None),
                 cell_history=cell_history,
                 md_mc=md_mc,
+                controlled=controlled,
             )
             schedule_digests = (
                 tuple(
@@ -514,13 +529,15 @@ class LammpsSampler:
                     else {}
                 ),
             }
+            if controlled is not None:
+                task['lammps_control'] = {'options': condition.lammps.to_payload(), 'settings': controlled.settings}
             if md_mc is not None:
                 task['md_mc'] = asdict(md_mc)
             if explicit:
                 if md_mc is not None:
                     from workflow_backends.lammps.identity_swap import mc_seed
                 context_class = (
-                    MdMcSampleTaskContext if md_mc is not None else CellProgramSampleTaskContext
+                    ControlledSampleTaskContext if controlled is not None else MdMcSampleTaskContext if md_mc is not None else CellProgramSampleTaskContext
                     if condition.kind == "nvt_cell_program"
                     else ExplicitSampleTaskContext
                 )
@@ -529,10 +546,10 @@ class LammpsSampler:
                     context_class(
                         schema="dice.lifecycle.sample-task-context",
                         schema_revision=(
-                            CELL_PROGRAM_TASK_CONTEXT_SCHEMA_REVISION
+                            5 if controlled is not None else (CELL_PROGRAM_TASK_CONTEXT_SCHEMA_REVISION
                             if condition.kind == "nvt_cell_program"
                             else 4 if md_mc is not None
-                            else 2
+                            else 2)
                         ),
                         task_index=task_index,
                         task_id=condition.task_id,
@@ -551,7 +568,7 @@ class LammpsSampler:
                         pressure_bar=pressure,
                         total_steps=task_steps,
                         trajectory_every_steps=task["cadence"],
-                        native_timestep=self._timestep(source),
+                        native_timestep=(controlled.timestep if controlled else self._timestep(source)),
                         recipe_binding=condition.recipe_binding,
                         recipe_sha256=_file_digest(source),
                         rendered_input_sha256=_file_digest(task_dir / "input.lammps"),
@@ -566,6 +583,7 @@ class LammpsSampler:
                             else ()
                         ),
                         schedule_digests=schedule_digests,
+                        **({'lammps_control': task['lammps_control']} if controlled is not None else {}),
                         **({'md_mc': {
                             'parameters': asdict(md_mc),
                             'seed_cell': selected.cell.array.tolist(),
@@ -959,87 +977,11 @@ class LammpsSampler:
                         pass
                 raise
 
-    def _validate_recipe(self, recipe: Path, *, kind: str | None = None, ensemble: str | None = None) -> None:
-        text = recipe.read_text(encoding="utf-8")
-        if kind == 'md_mc':
-            from workflow_backends.lammps.identity_swap import validate_recipe
-            validate_recipe(text, ensemble=ensemble)
-            return
-        if "DICE_BEGIN" in text or "DICE_END" in text:
-            raise ValueError("lifecycle LAMMPS source recipe must not contain managed markers")
-        includes = re.findall(r"(?m)^\s*include\s+dice_task_setup\.lammps\s*$", text)
-        if len(includes) != 1: raise ValueError("lifecycle LAMMPS recipe requires exactly one include dice_task_setup.lammps")
-        capability = re.findall(
-            r"(?m)^\s*#\s*DICE_CAPABILITY:\s*nvt_cell_program\s*$", text
-        )
-        if kind == "nvt_cell_program":
-            cadence = re.findall(
-                r"(?m)^\s*variable\s+dice_trajectory_every_steps\s+equal\s+([1-9]\d*)\s*$",
-                text,
-            )
-            if len(capability) != 1 or len(cadence) != 1:
-                raise ValueError(
-                    "lifecycle LAMMPS nvt_cell_program recipe requires its explicit capability and cadence"
-                )
-            if re.search(
-                r"(?mi)^\s*(?:run|clear|reset_timestep|read_data|read_restart|restart|write_restart)\b",
-                text,
-            ) or re.search(
-                r"(?mi)^\s*fix\s+\S+\s+\S+\s+(?:nvt|npt|deform)\b", text
-            ):
-                raise ValueError(
-                    "lifecycle LAMMPS nvt_cell_program recipe may not own managed dynamics"
-                )
-            return
-        if capability:
-            raise ValueError(
-                "lifecycle LAMMPS cell-program capability is valid only for nvt_cell_program"
-            )
-        if kind not in {"nvt_program", "npt_program"}:
-            runs = re.findall(r"(?m)^\s*run\s+\$\{dice_run_steps\}\s*$", text)
-            if len(runs) != 1: raise ValueError("lifecycle LAMMPS recipe requires exactly one main run ${dice_run_steps}")
-            return
-        cadence = re.findall(
-            r"(?m)^\s*variable\s+dice_trajectory_every_steps\s+equal\s+([1-9]\d*)\s*$",
-            text,
-        )
-        fix_pattern = (
-            r"(?m)^\s*fix\s+dice_npt\s+all\s+npt\s+temp\s+\$\{dice_tstart\}\s+\$\{dice_tstop\}\s+\S+\s+iso\s+\$\{dice_pressure\}\s+\$\{dice_pressure\}\s+\S+\s*$"
-            if kind == "npt_program"
-            else r"(?m)^\s*fix\s+dice_nvt\s+all\s+nvt\s+temp\s+\$\{dice_tstart\}\s+\$\{dice_tstop\}\s+\S+\s*$"
-        )
-        unfix_pattern = (
-            r"(?m)^\s*unfix\s+dice_npt\s*$"
-            if kind == "npt_program"
-            else r"(?m)^\s*unfix\s+dice_nvt\s*$"
-        )
-        required = (
-            r"(?m)^\s*variable\s+dice_tstart\s+file\s+dice_temperature_start\.dat\s*$",
-            r"(?m)^\s*variable\s+dice_tstop\s+file\s+dice_temperature_stop\.dat\s*$",
-            r"(?m)^\s*variable\s+dice_segment_steps\s+file\s+dice_temperature_steps\.dat\s*$",
-            r"(?m)^\s*label\s+dice_segment_loop\s*$",
-            fix_pattern,
-            r"(?m)^\s*run\s+\$\{dice_segment_steps\}\s*$",
-            unfix_pattern,
-            r"(?m)^\s*next\s+dice_tstart\s+dice_tstop\s+dice_segment_steps\s*$",
-            r"(?m)^\s*jump\s+SELF\s+dice_segment_loop\s*$",
-        )
-        matches = [re.findall(pattern, text) for pattern in required]
-        if len(cadence) != 1 or any(len(items) != 1 for items in matches):
-            raise ValueError(f"lifecycle LAMMPS {kind} recipe requires the canonical schedule loop")
-        include_at = text.index(re.search(r"(?m)^\s*include\s+dice_task_setup\.lammps\s*$", text).group())
-        cadence_at = text.index(re.search(r"(?m)^\s*variable\s+dice_trajectory_every_steps", text).group())
-        positions = [re.search(pattern, text).start() for pattern in required]
-        if cadence_at >= include_at or positions != sorted(positions):
-            raise ValueError(f"lifecycle LAMMPS {kind} recipe loop order is invalid")
-        loop_at = positions[3]
-        if re.search(r"(?mi)^\s*(?:clear|reset_timestep|read_data|read_restart)\b", text):
-            raise ValueError(f"lifecycle LAMMPS {kind} recipe may not restart task state")
-        velocities = tuple(re.finditer(r"(?mi)^\s*velocity\b", text))
-        if len(velocities) > 1 or any(match.start() >= loop_at for match in velocities):
-            raise ValueError(f"lifecycle LAMMPS {kind} recipe velocity creation is allowed only once before the loop")
+    def _validate_recipe(self, recipe: Path, *, kind=None, ensemble=None, text=None) -> None:
+        from workflow_backends.lammps.recipe_validation import validate_sampling_recipe
+        validate_sampling_recipe(recipe,kind=kind,ensemble=ensemble,text=text)
 
-    def _write_task(self, task_dir: Path, recipe: Path, seed: Atoms, models: Sequence[str | Path], type_map: tuple[str, ...], steps: int, temperature: float, pressure: float | None, task_seed: int, plumed: str | Path | None, execution_mode: str, *, program: object | None = None, cell_history: object | None = None, md_mc=None) -> None:
+    def _write_task(self, task_dir: Path, recipe: Path, seed: Atoms, models: Sequence[str | Path], type_map: tuple[str, ...], steps: int, temperature: float, pressure: float | None, task_seed: int, plumed: str | Path | None, execution_mode: str, *, program: object | None = None, cell_history: object | None = None, md_mc=None, controlled=None) -> None:
         write_extxyz_structures(task_dir / "seed.xyz", [seed], allow_empty=False)
         atoms_to_lammps_data(_lammps_seed(seed), task_dir / "conf.lmp", type_map=list(type_map))
         names=[]
@@ -1053,7 +995,7 @@ class LammpsSampler:
                     f"lifecycle LAMMPS DeepMD model must preserve a .pb or .pt2 suffix: {model}"
                 )
             target=task_dir/f"graph_{index:03d}{suffix}"; link_model_file(model_path,target); names.append(target.name)
-        cadence=self._cadence(recipe)
+        cadence=controlled.cadence if controlled else self._cadence(recipe)
         masses = [f"mass {index} {float(atomic_masses[atomic_numbers[symbol]]):.8g}" for index, symbol in enumerate(type_map, start=1)]
         pair_style = f"pair_style deepmd {' '.join(names)}"
         if len(names) > 1:
@@ -1061,9 +1003,13 @@ class LammpsSampler:
         if md_mc is not None:
             pair_style = f'pair_style {"deepmd/kk" if execution_mode == "kokkos" else "deepmd"} {names[0]}'
         setup=[f"variable dice_run_steps equal {int(steps)}", f"variable dice_temperature equal {float(temperature)}", f"variable dice_seed equal {task_seed}"]
-        if execution_mode == "kokkos":
+        if execution_mode == "kokkos" or any(Path(model).suffix == '.pt2' for model in models):
             setup.append("atom_modify map yes")
         setup.append("read_data conf.lmp")
+        if controlled is not None and pressure is not None and controlled.settings.get('pressure_coupling', {}).get('value') == 'tri':
+            from ase.calculators.lammps import Prism
+            if not Prism(seed.cell).is_skewed():
+                setup.append('change_box all triclinic')
         if md_mc is not None and pressure is not None:
             from ase.calculators.lammps import Prism
             from workflow_backends.lammps.identity_swap import validate_recipe
@@ -1088,12 +1034,20 @@ class LammpsSampler:
         )
         if pressure is not None: setup.append(f"variable dice_pressure equal {float(pressure)}")
         (task_dir/"dice_task_setup.lammps").write_text("\n".join(setup)+"\n",encoding="utf-8")
-        recipe_text = recipe.read_text(encoding="utf-8")
+        source_text = recipe.read_text(encoding="utf-8")
+        from workflow_backends.lammps.program_protocol import prepare_sampling_protocol
+        kind=('nvt_cell_program' if cell_history is not None else
+              ('npt_program' if pressure is not None else 'nvt_program') if program is not None else
+              'md_mc' if md_mc is not None else None)
+        recipe_text = controlled.text if controlled else assemble_lammps_protocol(prepare_sampling_protocol(source_text,kind))
+        if controlled is not None or recipe_text != source_text:
+            (task_dir / "protocol.lammps").write_text(source_text, encoding="utf-8")
         if cell_history is not None:
             schedule = write_lammps_cell_schedule(
                 task_dir / "dice_cell_schedule.json", cell_history
             )
-            recipe_text = render_lammps_cell_program_input(recipe_text, schedule)
+            from workflow_backends.lammps.program_protocol import native_cell_control
+            recipe_text = render_lammps_cell_program_input(recipe_text, schedule,control=native_cell_control(source_text))
         (task_dir/"input.lammps").write_text(recipe_text,encoding="utf-8")
         if md_mc is not None:
             from workflow_backends.lammps.identity_swap import render, mc_seed
@@ -1255,7 +1209,8 @@ class LammpsSampler:
             json.dumps(
                 {
                     "schema": "dice.lammps-native-execution",
-                    "schema_revision": 2 if execution_mode == "kokkos" else 1,
+                    "schema_revision": 3 if "lammps_control" in task else (2 if execution_mode == "kokkos" else 1),
+                    **({"lammps_control": task["lammps_control"]} if "lammps_control" in task else {}),
                     "command": list(command_for_mode(execution_mode)),
                     "sampler_role": task["sampler_role"],
                     "environment_profile_id": task["environment_profile_id"],
@@ -1543,28 +1498,3 @@ def _file_digest(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def _publish_seed_selection_manifest(
-    path: Path,
-    *,
-    iter_index: int,
-    round_index: int,
-    selections: tuple[SamplingSeedSelection, ...],
-) -> None:
-    payload = seed_selection_manifest_payload(
-        iter_index=iter_index,
-        round_index=round_index,
-        selections=selections,
-    )
-    encoded = json.dumps(payload, sort_keys=True, indent=2) + "\n"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        if path.is_symlink() or path.read_text(encoding="utf-8") != encoded:
-            raise ValueError("existing seed-frame selection manifest disagrees with resolved sampling")
-        return
-    temporary = path.with_name(f".{path.name}.tmp")
-    if temporary.exists() or temporary.is_symlink():
-        raise ValueError("stale seed-frame selection manifest temporary path")
-    temporary.write_text(encoded, encoding="utf-8")
-    os.replace(temporary, path)

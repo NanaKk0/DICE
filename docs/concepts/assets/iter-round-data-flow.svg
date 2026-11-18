@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="575" viewBox="0 0 940 575" role="img" aria-labelledby="title desc">
+  <title id="title">Iterations, rounds and data flow</title>
+  <desc id="desc">Teacher labels expand student training data. DFT labels update the teacher in the next iter. Training additions and DFT candidates can overlap.</desc>
+  <defs>
+    <marker id="gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#52616b"/></marker>
+    <marker id="teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#147d87"/></marker>
+    <marker id="orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#c65f2b"/></marker>
+    <style>
+      text { font-family: "DejaVu Sans", Arial, sans-serif; fill: #1d2933; font-size: 16px; }
+      .heading { font-size: 18px; font-weight: 600; }
+      .detail { font-size: 14px; }
+      .muted { fill: #637381; }
+      .route { fill: none; stroke-width: 1.7; stroke-linejoin: round; }
+    </style>
+  </defs>
+  <rect width="940" height="575" fill="white"/>
+  <g id="current-iter-boundary">
+    <rect x="55" y="25" width="865" height="365" fill="none" stroke="#cad4db"/>
+    <text x="75" y="51">Current iter: fixed teacher; configured student rounds</text>
+  </g>
+  <g id="teacher">
+    <rect x="95" y="75" width="230" height="80" fill="#eff7f7" stroke="#147d87"/>
+    <text x="210" y="106" text-anchor="middle" class="heading">Teacher training</text>
+    <text x="210" y="132" text-anchor="middle" class="detail">Reference data + DFT labels</text>
+  </g>
+  <g id="student">
+    <rect x="95" y="265" width="230" height="80" fill="#f8fafb" stroke="#8b99a3"/>
+    <text x="210" y="297" text-anchor="middle" class="heading" style="font-size:16px">Student train → sample</text>
+    <text x="210" y="323" text-anchor="middle" class="detail">Accumulated training data</text>
+  </g>
+  <g id="screening">
+    <rect x="405" y="265" width="170" height="80" fill="#f8fafb" stroke="#8b99a3"/>
+    <text x="490" y="297" text-anchor="middle" class="heading">Screening</text>
+    <text x="490" y="323" text-anchor="middle" class="detail">Two selection routes</text>
+  </g>
+  <g id="labelled-additions">
+    <rect x="405" y="75" width="170" height="80" fill="#eff7f7" stroke="#147d87"/>
+    <text x="490" y="106" text-anchor="middle" class="heading">Teacher labels</text>
+    <text x="490" y="132" text-anchor="middle" class="detail">For student training</text>
+  </g>
+  <g id="dft-candidates">
+    <rect x="670" y="265" width="220" height="80" fill="#fff6f0" stroke="#c65f2b"/>
+    <text x="780" y="297" text-anchor="middle" class="heading">DFT selection</text>
+    <text x="780" y="323" text-anchor="middle" class="detail">Aggregate at iter end</text>
+  </g>
+  <g id="dft-labelling">
+    <rect x="670" y="465" width="220" height="70" fill="#fff6f0" stroke="#c65f2b"/>
+    <text x="780" y="493" text-anchor="middle" class="heading">DFT labeling</text>
+    <text x="780" y="518" text-anchor="middle" class="detail" style="font-size:13px">Reference energies and forces</text>
+  </g>
+  <g id="teacher-supervision">
+    <path d="M175 155 V265" class="route" stroke="#147d87" marker-end="url(#teal)"/>
+    <text x="190" y="230" class="detail"><tspan x="190">Initial</tspan><tspan x="190" dy="19">supervision</tspan></text>
+    <path d="M325 115 H405" class="route" stroke="#147d87" marker-end="url(#teal)"/>
+    <text x="365" y="99" text-anchor="middle" class="detail">Labels</text>
+  </g>
+  <g id="round-cycle">
+    <path d="M325 305 H405" class="route" stroke="#52616b" marker-end="url(#gray)"/>
+    <text x="365" y="289" text-anchor="middle" class="detail">Samples</text>
+    <path d="M535 265 V155" class="route" stroke="#147d87" marker-end="url(#teal)"/>
+    <text x="548" y="211" class="detail">Training additions</text>
+    <path d="M430 155 V210 H285 V265" class="route" stroke="#147d87" marker-end="url(#teal)"/>
+    <text x="350" y="196" text-anchor="middle" class="detail">Next round</text>
+  </g>
+  <g id="dft-handoff">
+    <path d="M575 305 H670" class="route" stroke="#c65f2b" marker-end="url(#orange)"/>
+    <text x="622" y="289" text-anchor="middle" class="detail">Candidates</text>
+    <path d="M780 345 V465" class="route" stroke="#c65f2b" marker-end="url(#orange)"/>
+    <text x="795" y="431" class="detail">Selected frames</text>
+  </g>
+  <g id="next-iter-return">
+    <text x="95" y="432" class="muted">DFT labeling and teacher update</text>
+    <path d="M670 500 H25 V115 H95" class="route" stroke="#c65f2b" marker-end="url(#orange)"/>
+    <text x="95" y="483">Next iter: add DFT labels to teacher data</text>
+    <text x="95" y="535" class="detail muted">Routes may overlap; DFT labels update the next teacher.</text>
+  </g>
+</svg>

@@ -1,0 +1,86 @@
+{
+  "iter": 0,
+  "teacher_train_bootstrap": [
+    "data/teacher_initial.extxyz"
+  ],
+  "student_train_bootstrap": [
+    "data/student_initial.extxyz"
+  ],
+  "fp_data": [],
+  "teacher": {
+    "backend": "DeepMD",
+    "model": "single",
+    "cli": "pt",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "policy": "foundation_finetune",
+    "recipe": "recipes/teacher.json",
+    "valid_frac": 0.0,
+    "foundation_model": "models/DPA4-Neo-OMat24-v20260805.pt",
+    "train_options": {
+      "skip_neighbor_stat": true
+    }
+  },
+  "student": {
+    "backend": "DeepMD",
+    "model": "single",
+    "cli": "pt",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "policy": "from_scratch",
+    "recipe": "recipes/student.json",
+    "valid_frac": 0.0,
+    "compress": true,
+    "train_options": {
+      "skip_neighbor_stat": true
+    },
+    "include_teacher_train_data": true
+  },
+  "sampler": {
+    "backend": "LAMMPS"
+  },
+  "sample": {
+    "seeds": {
+      "bulk": {
+        "source": "seeds/seed.extxyz",
+        "selection_group": "bulk",
+        "max_frames": 2
+      }
+    },
+    "condition_groups": {
+      "nvt": {
+        "kind": "nvt",
+        "recipe": "recipes/nvt.lammps",
+        "temperatures_k": [
+          300,
+          600
+        ],
+        "steps": 2500,
+        "timestep_ps": 0.00025,
+        "trajectory_every_steps": 10
+      }
+    },
+    "round_count": 2
+  },
+  "screen": {
+    "pool": 200,
+    "keep": 50,
+    "policy": "DIRECT",
+    "fp_pool": 200,
+    "teacher_p": {
+      "floor": 0.0,
+      "ceiling": 0.1,
+      "trust": 0.1
+    },
+    "prescreen": "JOINT_DIRECT"
+  },
+  "fp": {
+    "keep": 20,
+    "policy": "DIRECT",
+    "all_rn": true
+  }
+}

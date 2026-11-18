@@ -1,0 +1,75 @@
+{
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa4c",
+      "rcut": 6.0,
+      "channels": 32,
+      "lmax": 2,
+      "basis_type": "bessel",
+      "n_radial": 16,
+      "radial_modes": 4,
+      "precision": "float32",
+      "use_amp": false,
+      "seed": 42
+    },
+    "fitting_net": {
+      "neuron": [
+        192,
+        192,
+        192
+      ],
+      "resnet_dt": false,
+      "activation_function": "silu",
+      "precision": "float32",
+      "seed": 42
+    }
+  },
+  "learning_rate": {
+    "type": "wsd",
+    "start_lr": 0.001,
+    "stop_lr": 1e-06,
+    "warmup_steps": 50,
+    "decay_phase_ratio": 0.2,
+    "decay_type": "inverse_linear"
+  },
+  "loss": {
+    "type": "ener",
+    "loss_func": "mae",
+    "f_use_norm": true,
+    "start_pref_e": 20,
+    "limit_pref_e": 20,
+    "start_pref_f": 20,
+    "limit_pref_f": 20,
+    "start_pref_v": 0,
+    "limit_pref_v": 0
+  },
+  "optimizer": {
+    "type": "HybridMuon",
+    "weight_decay": 0.001
+  },
+  "training": {
+    "stat_file": "dpa4c.hdf5",
+    "stat_file_mode": "update",
+    "training_data": {
+      "batch_size": 1
+    },
+    "numb_steps": 5000,
+    "gradient_max_norm": 5.0,
+    "save_freq": 1000,
+    "save_dir": "ckpt",
+    "max_ckpt_keep": 3,
+    "disp_file": "lcurve.out",
+    "disp_freq": 200,
+    "disp_training": true,
+    "time_training": true,
+    "enable_compile": false,
+    "seed": 42
+  },
+  "validating": {
+    "save_best_dir": "ckpt_best"
+  }
+}

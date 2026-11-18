@@ -2,9 +2,9 @@
 # Copy to your run directory as activate-native.sh and edit this installation path.
 # The native activation must expose compatible python, dp, lmp and shared libraries.
 if [[ ! -r /absolute/path/to/native/activate.sh ]]; then
-    echo "Edit activate-native.sh to source your qualified native installation." >&2
+    echo "Edit activate-native.sh to source your native installation." >&2
     return 1
 fi
 source /absolute/path/to/native/activate.sh
-export DP_INTERFACE_PREC=high
+# Choose interface precision for your model/runtime separately from model precision.
 export DICE_LAMMPS_PARALLEL_TASKS=1

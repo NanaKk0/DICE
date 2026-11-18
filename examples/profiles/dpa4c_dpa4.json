@@ -10,6 +10,9 @@
       "executables": {
         "dp": "dp",
         "python": "python"
+      },
+      "runtime": {
+        "batch_size": 9472
       }
     },
     "sampling": {

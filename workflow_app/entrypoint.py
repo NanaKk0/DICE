@@ -127,10 +127,10 @@ def main(
             first_block=launch.plan.blocks[0].block_id,
             require_environment=True,
         )
-        preflight_sampling_protocols(launch, first_block=launch.plan.blocks[0].block_id)
+        sampling_controls = preflight_sampling_protocols(launch, first_block=launch.plan.blocks[0].block_id)
         print(
             json.dumps(
-                lifecycle_preflight_evidence(launch),
+                {**lifecycle_preflight_evidence(launch), **({"sampling_controls": sampling_controls} if sampling_controls else {})},
                 sort_keys=True,
                 separators=(",", ":"),
             )

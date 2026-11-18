@@ -619,6 +619,7 @@ def _sampling_binding(config: Any) -> SamplingBackendBinding:
             SamplingRecipeSource(
                 path=config.root / (group['md']['recipe'] if group.get('kind') == 'gcmc_md' else group['recipe']),
                 condition_group_id=str(group_id),
+                inputs={name: config.root/source for name,source in group.get('inputs', {}).items()},
             )
             for group_id, group in sample["condition_groups"].items()
             if "recipe" in group or (group.get('kind') == 'gcmc_md' and 'md' in group)
@@ -657,26 +658,118 @@ def sampling_backend_binding(config: Any) -> SamplingBackendBinding:
     return _sampling_binding(config)
 
 
-def preflight_sampling_protocols(launch: LifecycleLaunch, *, first_block: str, single_block: bool = False) -> None:
-    """Selected native recipe feasibility, before any lifecycle mutation."""
+def _sampling_protocol_tasks(config, plan, round_index):
+    tasks = plan.tasks_for_round(round_index)
+    # Use the same deterministic source-frame algorithm as task execution.
+    frame_indices = {}
+    active_roles = {task.sampling_role_id for task in tasks}
+    for role_id, seed in config.raw['sample']['seeds'].items():
+        if role_id not in active_roles or 'max_frames' not in seed:
+            continue
+        import hashlib
+        from workflow_core.lifecycle.seed_frame_sampling import select_frame_indices
+        from workflow_core.structures.formats import read_extxyz_structures
+        path = config.root / seed['source']
+        indices, _seed_identity = select_frame_indices(
+            source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            frame_count=len(read_extxyz_structures(path, allow_empty=False)),
+            max_frames=seed['max_frames'], iter_index=config.iter_index,
+            round_index=round_index, sampling_role_id=role_id)
+        frame_indices[role_id] = indices
+    if frame_indices:
+        tasks = plan.expand_source_frames(frame_indices).tasks_for_round(round_index)
+    return tasks
+
+
+def preflight_sampling_protocols(launch: LifecycleLaunch, *, first_block: str, single_block: bool = False) -> tuple[dict, ...]:
+    """Resolve selected native controls read-only, before lifecycle mutation."""
     config = launch.config
     plan = config.sampling_plan
-    if config.sampler['backend'] != 'LAMMPS' or not hasattr(plan, 'tasks_for_round'):
-        return
+    if not hasattr(plan, 'tasks_for_round'):
+        return ()
+    if config.sampler['backend'] == 'GPUMD':
+        from workflow_backends.gpumd.protocol_sampler import resolve_gpumd_protocol
+        blocks = tuple(block.block_id for block in launch.plan.blocks)
+        selected = (first_block,) if single_block else blocks[blocks.index(first_block):]
+        summaries = []
+        for block in selected:
+            if not block.endswith('/sample'):
+                continue
+            tasks = _sampling_protocol_tasks(config, plan, int(block.split('/')[0][1:]))
+            for group_id in dict.fromkeys(task.condition_group_id for task in tasks if task.protocol_request is not None):
+                group_tasks = [task for task in tasks if task.condition_group_id == group_id]
+                declaration = config.raw['sample']['condition_groups'][group_id]
+                try:
+                    from workflow_backends.common.recipe_inputs import validate_recipe_inputs
+                    validate_recipe_inputs({name: config.root/source for name,source in declaration.get('inputs', {}).items()})
+                    _protocol, effective = resolve_gpumd_protocol((config.root/declaration['recipe']).read_text(), group_tasks[0].protocol_request)
+                except ValueError as exc:
+                    raise ValueError(f'{block} condition group {group_id}: {exc}') from exc
+                summaries.append(dict(block=block,condition_group_id=group_id,recipe=declaration['recipe'],
+                    task_count=len(group_tasks),representative_task=group_tasks[0].task_id,settings=effective['settings']))
+        return tuple(summaries)
+    from workflow_backends.lammps.control import render_lammps_control, validate_native_ensemble
+    from workflow_backends.sample_artifacts import explicit_task_seed
+    from workflow_backends.lammps.identity_swap import validate_recipe
     blocks = tuple(block.block_id for block in launch.plan.blocks)
     selected = (first_block,) if single_block else blocks[blocks.index(first_block):]
-    groups = {task.condition_group_id for block in selected if block.endswith('/sample')
-              for task in plan.tasks_for_round(int(block.split('/')[0][1:])) if task.kind == 'md_mc'}
-    if not groups:
-        return
-    from workflow_backends.lammps.identity_swap import validate_recipe
-    for group_id in groups:
-        declaration = config.raw['sample']['condition_groups'][group_id]
-        validate_recipe((config.root/declaration['recipe']).read_text(), ensemble=declaration['ensemble'])
-    if config.student['model'] == 'committee' and launch.preflight is not None:
+    summaries = []
+    has_md_mc = False
+    for block in selected:
+        if not block.endswith('/sample'):
+            continue
+        round_index = int(block.split('/')[0][1:])
+        tasks = _sampling_protocol_tasks(config, plan, round_index)
+        group_ids = tuple(dict.fromkeys(task.condition_group_id for task in tasks))
+        for group_id in group_ids:
+            group_tasks = [task for task in tasks if task.condition_group_id == group_id]
+            task = group_tasks[0]
+            declaration = config.raw['sample']['condition_groups'][group_id]
+            if task.kind in {'nvt_program','npt_program','nvt_cell_program'}:
+                from workflow_backends.lammps.recipe_validation import validate_sampling_recipe
+                validate_sampling_recipe(config.root/declaration['recipe'],kind=task.kind)
+                continue
+            if task.protocol_request is not None:
+                from workflow_backends.lammps.native_protocol import compile_lammps_protocol
+                from workflow_backends.lammps.protocol_sampler import load_protocol_source, bind_protocol_setup, resolve_native_type_map
+                text = load_protocol_source(config.root/declaration['recipe'])
+                try:
+                    from workflow_backends.common.recipe_inputs import validate_recipe_inputs
+                    validate_recipe_inputs({name: config.root/source for name,source in declaration.get('inputs', {}).items()})
+                    resolved = compile_lammps_protocol(text, task.protocol_request)
+                    bind_protocol_setup(resolved.text)
+                    resolve_native_type_map(resolved.text, config.student['type_map'])
+                except ValueError as exc:
+                    raise ValueError(f'{block} condition group {group_id}: {exc}') from exc
+                summaries.append({'block':block,'condition_group_id':group_id,'recipe':declaration['recipe'],
+                    'task_count':len(group_tasks),'representative_task':task.task_id,'settings':resolved.settings})
+                continue
+            if task.kind not in {'nvt', 'npt', 'md_mc'}:
+                continue
+            text = (config.root/declaration['recipe']).read_text()
+            try:
+                if task.kind == 'md_mc':
+                    validate_recipe(text, ensemble=declaration['ensemble'])
+                    has_md_mc = True
+                elif task.lammps is not None:
+                    result = render_lammps_control(text, task.lammps.to_payload(),
+                        ensemble=task.ensemble, temperature=task.temperature_k, pressure=task.pressure_bar,
+                        steps=task.steps, seed=explicit_task_seed(iter_index=config.iter_index,
+                            round_index=round_index, sampling_role_id=task.sampling_role_id))
+                    summaries.append({'block': block, 'condition_group_id': group_id,
+                        'recipe': declaration['recipe'], 'task_count': len(group_tasks),
+                        'temperatures_k': list(dict.fromkeys(t.temperature_k for t in group_tasks)),
+                        'pressures_bar': list(dict.fromkeys(t.pressure_bar for t in group_tasks)),
+                        'representative_task': task.task_id, 'settings': result.settings})
+                else:
+                    validate_native_ensemble(text, ensemble=task.ensemble)
+            except ValueError as exc:
+                raise ValueError(f'{block} condition group {group_id}: {exc}') from exc
+    if has_md_mc and config.student['model'] == 'committee' and launch.preflight is not None:
         role = f"sampler.lammps.{config.student['cli']}"
         if 'python' not in launch.preflight.evidence[role]['executables']:
             raise ValueError('committee md_mc requires the sampler Python executable for formal-frame evaluation')
+    return tuple(summaries)
 
 
 def student_backend_binding(config: Any) -> StudentBackendBinding:

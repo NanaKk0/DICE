@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from decimal import Decimal, InvalidOperation
+from io import StringIO
 import hashlib
 import math
 from pathlib import Path
 import re
 
 from ase import Atoms
-from ase.io import iread
+from ase.io import iread, read
+from workflow_backends.common.frame_index import index_extxyz_frames
 
 from workflow_backends.observation_source import (
     ObservationLocator,
@@ -50,6 +52,7 @@ class GpumdObservationSource:
         self.contexts = None if contexts is None else tuple(contexts)
         self.plan = plan
         self._catalog: tuple[ObservationRecord, ...] | None = None
+        self._frame_indices = {}
 
     def catalog(self) -> tuple[ObservationRecord, ...]:
         if self._catalog is not None:
@@ -64,7 +67,7 @@ class GpumdObservationSource:
         if planned is not None and len(task_dirs) != len(planned):
             raise ValueError("GPUMD explicit sample inventory disagrees with its plan")
         for task_index, task_dir in enumerate(task_dirs):
-            if planned is not None and planned[task_index].kind == "neb":
+            if planned is not None and (planned[task_index].kind in {'neb', 'relax'} or planned[task_index].protocol_request is not None):
                 continue
             context = (
                 load_task_context(task_dir / "task_context.json")
@@ -91,7 +94,9 @@ class GpumdObservationSource:
                 task_dir / "active.out",
                 run_input_path=task_dir / "run.in",
             )
-            frame_count = _extxyz_frame_count(task_dir / "active.xyz")
+            index = index_extxyz_frames(task_dir/"active.xyz", expected_count=len(active_rows))
+            self._frame_indices[task_index] = index
+            frame_count = len(index.spans)
             if len(active_rows) != frame_count:
                 raise ValueError("GPUMD active.out/active.xyz length mismatch; rebuild rN/sample")
             for frame_index, (step, uncertainty) in enumerate(active_rows):
@@ -128,6 +133,7 @@ class GpumdObservationSource:
         if not records:
             raise ValueError("GPUMD native source has no positive-step observations; rebuild rN/sample")
         self._catalog = tuple(records)
+        self._records_by_id = {record.structure_id: record for record in records}
         return self._catalog
 
     def replay(
@@ -142,105 +148,30 @@ class GpumdObservationSource:
         identities = tuple(str(item) for item in ordered_identities)
         if any(not item for item in identities) or len(set(identities)) != len(identities):
             raise ValueError("GPUMD replay identities must be unique and non-empty")
-        by_id = {record.structure_id: record for record in self.catalog()}
+        self.catalog()
+        by_id = self._records_by_id
         missing = [identity for identity in identities if identity not in by_id]
         if missing:
             raise ValueError(f"GPUMD replay identity is absent from the catalog: {missing[0]}")
-        tasks = _ordered_task_dirs(self.sample_dir)
-        catalog_order = {record.structure_id: index for index, record in enumerate(self.catalog())}
-        requested_positions = tuple(catalog_order[identity] for identity in identities)
-        if all(left < right for left, right in zip(requested_positions, requested_positions[1:])):
-            yield from self._replay_ordered_subset(identities, by_id=by_id, tasks=tasks, chunk_size=size)
-            return
         for start in range(0, len(identities), size):
-            chunk_ids = identities[start : start + size]
-            requested = [by_id[identity] for identity in chunk_ids]
-            loaded: dict[str, Atoms] = {}
-            for task_index in sorted({record.task_index for record in requested}):
-                task_records = [record for record in requested if record.task_index == task_index]
-                wanted = {record.frame_index: record for record in task_records}
-                for frame_index, atoms in enumerate(
-                    iread(tasks[task_index] / "active.xyz", index=":", format="extxyz")
-                ):
-                    record = wanted.get(frame_index)
-                    if record is None:
-                        continue
-                    atoms.info.update(
-                        system_id=record.system_id,
-                        structure_id=record.structure_id,
-                        structure_source="workflow",
-                        md_step=record.md_step,
+            wanted, grouped, loaded = identities[start:start + size], {}, {}
+            for identity in wanted:
+                record = by_id[identity]
+                grouped.setdefault(record.task_index, []).append(record)
+            for task_index, records in grouped.items():
+                for record, raw in zip(records, self._frame_indices[task_index].read(
+                    record.frame_index for record in records), strict=True):
+                    atoms = read(StringIO(raw.decode('utf-8')), format='extxyz')
+                    atoms.info.update(system_id=record.system_id, structure_id=record.structure_id,
+                        structure_source='workflow', md_step=record.md_step,
                         student_uncertainty=record.student_uncertainty,
-                        force_uncertainty=record.student_uncertainty,
-                        force_std_max=record.student_uncertainty,
-                        **(
-                            {
-                                "sampling_role_id": record.sampling_role_id,
-                                "selection_group_id": record.selection_group_id,
-                                "condition_group_id": record.condition_group_id,
-                                "task_id": record.task_id,
-                            }
-                            if record.sampling_role_id is not None
-                            else {}
-                        ),
-                    )
+                        force_uncertainty=record.student_uncertainty, force_std_max=record.student_uncertainty)
+                    if record.sampling_role_id is not None:
+                        atoms.info.update(sampling_role_id=record.sampling_role_id,
+                            selection_group_id=record.selection_group_id,
+                            condition_group_id=record.condition_group_id, task_id=record.task_id)
                     loaded[record.structure_id] = atoms
-                if any(record.structure_id not in loaded for record in task_records):
-                    raise ValueError("GPUMD replay frame is missing; rebuild rN/sample")
-            yield tuple(loaded[identity] for identity in chunk_ids)
-
-    def _replay_ordered_subset(
-        self,
-        identities: tuple[str, ...],
-        *,
-        by_id: dict[str, ObservationRecord],
-        tasks: tuple[Path, ...],
-        chunk_size: int,
-    ) -> Iterator[tuple[Atoms, ...]]:
-        records = [by_id[identity] for identity in identities]
-        output: list[Atoms] = []
-        produced: list[str] = []
-        for task_index in sorted({record.task_index for record in records}):
-            task_records = [record for record in records if record.task_index == task_index]
-            wanted = {record.frame_index: record for record in task_records}
-            seen: set[int] = set()
-            for frame_index, atoms in enumerate(
-                iread(tasks[task_index] / "active.xyz", index=":", format="extxyz")
-            ):
-                record = wanted.get(frame_index)
-                if record is None:
-                    continue
-                atoms.info.update(
-                    system_id=record.system_id,
-                    structure_id=record.structure_id,
-                    structure_source="workflow",
-                    md_step=record.md_step,
-                    student_uncertainty=record.student_uncertainty,
-                    force_uncertainty=record.student_uncertainty,
-                    force_std_max=record.student_uncertainty,
-                    **(
-                        {
-                            "sampling_role_id": record.sampling_role_id,
-                            "selection_group_id": record.selection_group_id,
-                            "condition_group_id": record.condition_group_id,
-                            "task_id": record.task_id,
-                        }
-                        if record.sampling_role_id is not None
-                        else {}
-                    ),
-                )
-                output.append(atoms)
-                produced.append(record.structure_id)
-                seen.add(frame_index)
-                if len(output) == chunk_size:
-                    yield tuple(output)
-                    output = []
-            if seen != set(wanted):
-                raise ValueError(f"GPUMD ordered replay is missing task {task_index} frames; rebuild rN/sample")
-        if output:
-            yield tuple(output)
-        if tuple(produced) != identities:
-            raise ValueError("GPUMD ordered replay identities do not match requested order")
+            yield tuple(loaded[identity] for identity in wanted)
 
 
 def _ordered_task_dirs(sample_dir: Path) -> tuple[Path, ...]:
@@ -397,6 +328,8 @@ def validate_gpumd_sample_block(
         model_paths = tuple(Path(model).resolve() for model in models)
         model_digests = tuple(_file_digest(path) for path in model_paths)
         for task_index, condition in enumerate(conditions):
+                if getattr(condition, 'protocol_request', None) is not None:
+                    continue
                 if accepted_kinds is not None and getattr(condition, "kind", None) not in accepted_kinds:
                     continue
                 system_id = condition.system_id
@@ -625,7 +558,7 @@ def _rendered_condition_matches(
     ensembles = [row for row in rows if row[:1] == ["ensemble"]]
     runs = [row for row in rows if row[:1] == ["run"]]
     try:
-        if len(velocity) != 1 or float(velocity[0][1]) != condition.temperature_k:
+        if len(velocity) != 1:
             return False
         if len(runs) != 1 or int(runs[0][1]) != int(steps) or len(ensembles) != 1:
             return False
@@ -633,16 +566,16 @@ def _rendered_condition_matches(
         if condition.ensemble == "nvt":
             return (
                 len(row) == 5
-                and row[1] == "nvt_ber"
+                and row[1].startswith('nvt_')
                 and float(row[2]) == condition.temperature_k
                 and float(row[3]) == condition.temperature_k
             )
         return (
-            len(row) == 6
-            and row[1] == "npt_ber"
+            len(row) in {6, 8, 12, 18}
+            and row[1].startswith('npt_')
             and float(row[2]) == condition.temperature_k
             and float(row[3]) == condition.temperature_k
-            and float(row[5]) == condition.pressure_bar
+            and math.isclose(float(row[5]), condition.pressure_bar if len(row)==6 else condition.pressure_bar*1e-4)
         )
     except (IndexError, TypeError, ValueError):
         return False

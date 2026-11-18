@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_generated_loader_inventory_is_current_and_includes_conditional_additions():
     subprocess.run([sys.executable, str(ROOT / "tools/generate_config_reference.py"), "--check"], check=True)
-    document = (ROOT / "docs/configuration-fields.md").read_text()
+    document = (ROOT / "docs/reference/appendices/configuration-fields.md").read_text()
     condition_row = next(line for line in document.splitlines() if "_resolve_explicit_sampling_plan:" in line and "`prefix`" in line)
     assert "`recipe`" in condition_row and "`pressures_bar`" in condition_row
     p_row = next(line for line in document.splitlines() if "_p_band_config:" in line)
@@ -28,7 +28,7 @@ def test_generated_loader_inventory_is_current_and_includes_conditional_addition
 
 
 def test_minimal_labelled_extxyz_schema_and_unlabelled_rejection():
-    frames = read_extxyz_structures(ROOT / "examples/data/labelled_h2.extxyz", allow_empty=False)
+    frames = read_extxyz_structures(ROOT / "tests/fixtures/labelled_h2.extxyz", allow_empty=False)
     validate_label_properties(frames, LabelContract())
     assert len(frames) == 1 and len(frames[0]) == 2
     assert frames[0].get_potential_energy() == -1.0
@@ -71,7 +71,7 @@ def test_documented_p_boundaries_and_independent_teacher_views():
 
 
 def test_documented_next_iteration_handoff(tmp_path):
-    script = ROOT / "examples/iteration_handoff/check.py"
+    script = ROOT / "tests/fixtures/iteration_handoff/check.py"
     run_root = tmp_path / "handoff"
     subprocess.run([sys.executable, str(script), str(run_root)], check=True)
     summary = json.loads((run_root / "handoff_check.json").read_text())
@@ -95,7 +95,7 @@ def test_documented_explicit_sampling_snippet_uses_real_loader(tmp_path):
     # Exercise the official loader with the retained synthetic fixture, not an
     # archived training configuration that is deliberately not distributed.
     import importlib.util
-    spec = importlib.util.spec_from_file_location("_dice_documented_mock", ROOT / "examples/cpu_mock/fixtures.py")
+    spec = importlib.util.spec_from_file_location("_dice_documented_mock", ROOT / "tests/fixtures/cpu_mock/fixtures.py")
     fixture = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = fixture
     spec.loader.exec_module(fixture)
@@ -116,5 +116,5 @@ def test_documented_explicit_sampling_snippet_uses_real_loader(tmp_path):
 def test_html_build_includes_new_pages_and_data_asset(tmp_path):
     destination = tmp_path / "site"
     subprocess.run([sys.executable, str(ROOT / "tools/build_docs.py"), "--output", str(destination)], check=True)
-    for path in ("docs/data.html", "docs/own-system.html", "docs/configuration-fields.html", "examples/iteration_handoff/README.html", "examples/data/labelled_h2.extxyz"):
+    for path in ("docs/reference/data.html", "docs/getting-started/quickstart.html", "docs/reference/appendices/configuration-fields.html", "tests/fixtures/iteration_handoff/README.html", "tests/fixtures/labelled_h2.extxyz"):
         assert (destination / path).is_file()

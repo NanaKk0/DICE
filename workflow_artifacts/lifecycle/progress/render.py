@@ -558,7 +558,8 @@ def _render_summary(summary: object | None) -> str:
             summary.model_shape,
             f"{summary.tasks} tasks",
             f"{summary.systems} systems × {summary.temperatures} temperatures",
-            f"{summary.total_steps} {'planned' if summary.failed_tasks else 'total'} steps",
+            ("steps inherited from native protocol" if summary.total_steps is None
+             else f"{summary.total_steps} {'planned' if summary.failed_tasks else 'total'} steps"),
         ]
         if summary.mc_attempts:
             parts.append(f"{summary.mc_attempts} {'planned ' if summary.failed_tasks else ''}MC attempts")

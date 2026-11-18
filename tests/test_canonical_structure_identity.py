@@ -205,5 +205,9 @@ def test_active_canonical_extxyz_paths_do_not_assign_retired_alias_fields() -> N
                 assert token not in source, str(path)
 
 
-# The upstream documentation-maintenance assertion is not part of this
-# distribution's runtime test subset; internal agent contracts are not shipped.
+def test_live_workflow_contract_does_not_make_retired_lineage_alias_active() -> None:
+    contract = Path("docs/reference/data.md").read_text(encoding="utf-8")
+
+    assert "`source_structure_id`" not in contract
+    assert "`structure_id`, `structure_source`" in contract
+    assert "Canonical identities generated on ingestion" in contract

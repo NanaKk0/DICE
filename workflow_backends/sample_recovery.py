@@ -43,16 +43,29 @@ def validate_sample_artifacts(root: str | Path, facts: object) -> bool:
         # task directory.  Keep one digest per inode for this validation pass;
         # this preserves byte-level checks while avoiding hashing the same
         # multi-megabyte model once per task.
-        digest_cache: dict[tuple[int, int, int, int], str] = {}
+        digest_cache: dict[tuple[int, ...], str] = {}
         usable_observations = 0
         for index, (task_dir, intent) in enumerate(
             zip(tasks, facts.tasks, strict=True)
         ):
             seed = seeds[facts.system_ids.index(intent.system_id)]
+            if getattr(intent,'protocol_request',None) is not None:
+                if facts.backend == 'GPUMD':
+                    from workflow_backends.gpumd.protocol_sampler import validate_gpumd_protocol_result
+                    _context,result,_index=validate_gpumd_protocol_result(task_dir,intent=intent,seed=seed,
+                        type_map=facts.type_map,member_ids=facts.member_ids,digest_cache=digest_cache)
+                    usable_observations += len(result['observations'])
+                    continue
+                from workflow_backends.lammps.protocol_result import validate_protocol_result
+                context,result,_index=validate_protocol_result(task_dir,intent=intent,seed=seed,
+                    type_map=facts.type_map,member_ids=facts.member_ids,digest_cache=digest_cache)
+                usable_observations += sum(row['native_step']>0 or context['observation_kind']!='md'
+                                           for row in result['frames'])
+                continue
             if intent.kind == 'md_mc':
                 from dataclasses import asdict
                 from workflow_backends.lammps.identity_swap import validate_result
-                context, result = validate_result(task_dir)
+                context, result = validate_result(task_dir, digest_cache=digest_cache)
                 if (context.task_index != index or context.task_id != intent.task_id
                     or context.sampling_role_id != intent.sampling_role_id or context.condition_group_id != intent.condition_group_id
                     or context.selection_group_id != intent.selection_group_id or context.temperature_k != intent.temperature_k
@@ -145,6 +158,8 @@ def validate_sample_artifacts(root: str | Path, facts: object) -> bool:
                     if intent.program is not None
                     else ()
                 )
+                if getattr(context, 'lammps_control', {}).get('options') != (intent.lammps.to_payload() if intent.lammps else None):
+                    raise ValueError('LAMMPS control options changed; rebuild rN/sample')
                 if not isinstance(context, ExplicitSampleTaskContext) or (
                     context.task_index != index
                     or context.task_id != intent.task_id
@@ -208,7 +223,7 @@ def _validate_relax_task(
     task_index: int,
     seed: object,
     facts: object,
-    digest_cache: dict[tuple[int, int, int, int], str] | None = None,
+    digest_cache: dict[tuple[int, ...], str] | None = None,
 ) -> int:
     if digest_cache is None:
         digest_cache = {}
@@ -421,7 +436,7 @@ def _validate_neb_task(
     task_index: int,
     seed: object,
     facts: object,
-    digest_cache: dict[tuple[int, int, int, int], str] | None = None,
+    digest_cache: dict[tuple[int, ...], str] | None = None,
 ) -> int:
     if digest_cache is None:
         digest_cache = {}
@@ -718,7 +733,7 @@ def _validate_neb_endpoint_preparation(
     member_ids: tuple[str, ...],
     raw_endpoints: list[object],
     optimized_endpoints: list[object],
-    digest_cache: dict[tuple[int, int, int, int], str],
+    digest_cache: dict[tuple[int, ...], str],
 ) -> dict[str, object]:
     payload = _json_object(task / "endpoint_relaxation.json")
     raw_ids = [
@@ -833,7 +848,7 @@ def _validate_lammps_task(
     seed,
     facts: object,
     *,
-    digest_cache: dict[tuple[int, int, int, int], str] | None = None,
+    digest_cache: dict[tuple[int, ...], str] | None = None,
 ) -> int:
     if digest_cache is None:
         digest_cache = {}
@@ -889,9 +904,12 @@ def _validate_lammps_task(
                 raise ValueError("explicit LAMMPS cell schedule evidence changed")
         if (
             (
-                context.kind != "nvt_cell_program"
+                (context.kind != "nvt_cell_program" or (task / "protocol.lammps").exists())
                 and context.recipe_sha256
-                != _sha256(task / "input.lammps", cache=digest_cache)
+                != _sha256(
+                    task / ("protocol.lammps" if (task / "protocol.lammps").exists() else "input.lammps"),
+                    cache=digest_cache,
+                )
             )
             or context.rendered_input_sha256
             != _sha256(task / "input.lammps", cache=digest_cache)
@@ -974,6 +992,33 @@ def _validate_lammps_task(
 
 
 def _validate_lammps_rendered(task: Path, context) -> None:
+    from workflow_backends.lammps.protocol import assemble_lammps_protocol
+
+    source = task / "protocol.lammps"
+    if hasattr(context, 'lammps_control') and not source.is_file():
+        raise ValueError('LAMMPS controlled task requires preserved protocol')
+    if source.exists() or source.is_symlink():
+        _nonempty_regular(source)
+        from workflow_backends.lammps.program_protocol import prepare_sampling_protocol, native_cell_control
+        expected = assemble_lammps_protocol(prepare_sampling_protocol(source.read_text(encoding="utf-8"),getattr(context,'kind',None)))
+        if hasattr(context, 'lammps_control'):
+            from workflow_backends.lammps.control import render_lammps_control
+            controlled = render_lammps_control(source.read_text(encoding='utf-8'),
+                context.lammps_control['options'], ensemble=context.ensemble,
+                temperature=context.temperature_k, pressure=context.pressure_bar,
+                steps=context.steps, seed=context.native_seed)
+            if (context.lammps_control['settings'] != controlled.settings
+                or context.cadence != controlled.cadence or context.native_timestep != controlled.timestep):
+                raise ValueError('LAMMPS control settings changed')
+            expected = controlled.text
+        if isinstance(context, CellProgramSampleTaskContext):
+            from workflow_backends.lammps.cell_program import render_lammps_cell_program_input
+            expected = render_lammps_cell_program_input(
+                expected, json.loads((task / "dice_cell_schedule.json").read_text(encoding="utf-8")),
+                control=native_cell_control(source.read_text())
+            )
+        if (task / "input.lammps").read_text(encoding="utf-8") != expected:
+            raise ValueError("LAMMPS assembled protocol disagrees with input")
     setup = (task / "dice_task_setup.lammps").read_text(encoding="utf-8")
     variables: dict[str, str] = {}
     for line in setup.splitlines():
@@ -1014,6 +1059,10 @@ def _validate_lammps_rendered(task: Path, context) -> None:
             else r"(?m)^\s*run\s+\$\{dice_run_steps\}\s*$"
         )
     )
+    if hasattr(context, 'lammps_control'):
+        # The preserved protocol was independently recompiled above. Numeric
+        # native controls use the same budget without a user-side placeholder.
+        expected_run = rf"(?m)^\s*run\s+(?:\$\{{dice_run_steps\}}|{int(context.steps)})\s*$"
     if (
         len(re.findall(r"(?m)^\s*include\s+dice_task_setup\.lammps\s*$", rendered)) != 1
         or (
@@ -1045,7 +1094,7 @@ def _validate_gpumd_task(
     seed,
     facts: object,
     *,
-    digest_cache: dict[tuple[int, int, int, int], str] | None = None,
+    digest_cache: dict[tuple[int, ...], str] | None = None,
 ) -> None:
     if digest_cache is None:
         digest_cache = {}
@@ -1097,7 +1146,7 @@ def _validate_native_receipt(
     presentations,
     terminals,
     *,
-    digest_cache: dict[tuple[int, int, int, int], str] | None = None,
+    digest_cache: dict[tuple[int, ...], str] | None = None,
 ) -> None:
     from workflow_backends.lammps.observation_source import (
         validate_lammps_native_execution,
@@ -1160,7 +1209,7 @@ def _validate_compression(
     root: Path,
     facts: object,
     *,
-    digest_cache: dict[tuple[int, int, int, int], str] | None = None,
+    digest_cache: dict[tuple[int, ...], str] | None = None,
 ) -> None:
     if digest_cache is None:
         digest_cache = {}
@@ -1231,7 +1280,7 @@ def _directory(path: str | Path) -> Path:
 def _sha256(
     path: Path,
     *,
-    cache: dict[tuple[int, int, int, int], str] | None = None,
+    cache: dict[tuple[int, ...], str] | None = None,
 ) -> str:
     if cache is not None:
         stat = path.stat()

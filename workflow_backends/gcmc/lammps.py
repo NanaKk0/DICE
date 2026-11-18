@@ -187,20 +187,42 @@ def validate_recipe(path, parameters, temperature_k):
     substitutions = {'${dice_temperature_k}': str(float(temperature_k))}
     if parameters.pressure_bar is not None:
         substitutions['${dice_pressure_bar}'] = str(float(parameters.pressure_bar))
+    from workflow_core.common.native_protocol import NativeProtocolRequest
+    from workflow_backends.lammps.native_protocol import compile_lammps_protocol
+    source=Path(path).read_text()
+    for key,value in substitutions.items():source=source.replace(key,value)
+    try:
+        compiled=compile_lammps_protocol('units metal\n'+source+'\nrun '+str(parameters.steps)+'\n',
+            NativeProtocolRequest(ensemble=parameters.ensemble,
+                temperature_k=None if parameters.ensemble=='nve' else temperature_k,
+                pressure_bar=parameters.pressure_bar,steps=parameters.steps)).text
+    except ValueError as exc:
+        raise ValueError(f'unsupported MD native protocol: {exc}') from exc
     lines, commands = [], {}
-    for raw in Path(path).read_text().splitlines():
-        for key, value in substitutions.items():
-            raw = raw.replace(key, value)
-        parts = shlex.split(raw, comments=True)
-        if not parts:
-            continue
-        if any('$' in item or '&' in item or ';' in item for item in parts):
-            raise ValueError('unsupported MD recipe substitution or command continuation')
+    owned = {'clear', 'read_data', 'read_restart', 'create_box', 'create_atoms', 'delete_atoms',
+             'atom_style', 'atom_modify', 'boundary', 'pair_style', 'pair_coeff', 'reset_timestep',
+             'velocity', 'minimize', 'jump', 'next', 'label', 'if', 'python', 'shell', 'quit'}
+    from workflow_backends.lammps.protocol import command_spans
+    source_lines = compiled.splitlines(keepends=True)
+    for start, end, parts in command_spans(source_lines):
         command = parts[0]
-        if command not in {'timestep', 'neighbor', 'neigh_modify', 'fix'} or command in commands:
-            raise ValueError(f'managed or unsupported MD recipe command: {command}')
-        commands[command] = parts
-        lines.append(' '.join(parts))
+        if command in {'units','run'}:
+            continue
+        if command in owned:
+            raise ValueError(f'managed or unsupported MD state-transport command: {command}')
+        integration = command == 'fix' and len(parts) > 3 and parts[3] in {'nve','nvt','npt','nph','langevin'}
+        if command in {'timestep','neighbor','neigh_modify'} or integration:
+            key = 'fix' if integration else command
+            if key in commands:
+                raise ValueError(f'unsupported duplicate MD control: {key}')
+            commands[key] = parts
+        elif command == 'fix' and len(parts) > 3 and parts[3] in {'gcmc','atom/swap','deposit','evaporate','pour','bond/create'}:
+            raise ValueError('unsupported fixed-N MD state-transport fix')
+        elif command == 'dump' and (len(parts) < 6 or parts[1] == 'observations' or parts[5] in {'trajectory.dump','endpoint.dump'}):
+            raise ValueError('native MD auxiliary dump conflicts with standard observations')
+        elif command == 'include':
+            raise ValueError('MD include must be expanded before state transport')
+        lines.append(''.join(source_lines[start:end]).strip())
     if set(commands) != {'timestep', 'neighbor', 'neigh_modify', 'fix'}:
         raise ValueError('MD recipe requires timestep, neighbor, neigh_modify and one integration fix')
     if len(commands['timestep']) != 2:
@@ -234,8 +256,6 @@ def validate_recipe(path, parameters, temperature_k):
             raise ValueError('MD thermostat must use the task temperature at both endpoints')
         controls['thermostat_tau_fs'] = 1000*_positive(options[3], 'thermostat damping')
         options = options[4:]
-        if parameters.ensemble == 'nvt' and options:
-            raise ValueError('unsupported NVT fix options')
         if parameters.ensemble == 'npt':
             if len(options) < 4 or options[0] not in {'iso', 'aniso', 'tri'}:
                 raise ValueError('NPT recipe requires explicit iso, aniso or tri cell freedoms')
@@ -247,8 +267,12 @@ def validate_recipe(path, parameters, temperature_k):
                             cell_coupling='xyz' if options[0] == 'iso' else 'none',
                             pressure_bar=parameters.pressure_bar,
                             barostat_tau_fs=1000*_positive(options[3], 'barostat damping'))
-            if options[4:]:
-                raise ValueError('unsupported NPT fix options; cell controls must remain explicit')
+            tail = options[4:]
+            if 'couple' in tail:
+                index = tail.index('couple') + 1
+                if index == len(tail) or tail[index] not in {'none','xy','xz','yz','xyz'}:
+                    raise ValueError('unsupported NPT pressure coupling')
+                controls['cell_coupling'] = tail[index]
     return tuple(lines), controls
 
 

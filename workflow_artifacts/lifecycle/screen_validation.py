@@ -35,7 +35,6 @@ from workflow_policies.mixed_routes import (
 )
 from workflow_policies.pair_guard import PairGuardThresholds
 from workflow_policies.identities import selector_identity
-from workflow_artifacts.lifecycle.screen_report import load_screen_report
 
 
 @dataclass(frozen=True, slots=True)
@@ -1241,10 +1240,6 @@ def _valid_selection_group_outcomes(
                 and fp_count > fp_pool
             ):
                 return False
-        load_screen_report(
-            request.screen_dir / "screen_report.json",
-            expected_system_ids=plan.group_ids,
-        )
         return True
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return False

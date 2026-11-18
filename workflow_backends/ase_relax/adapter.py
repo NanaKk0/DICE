@@ -83,6 +83,9 @@ class _RelaxObservationSource:
             identity: ordinal for ordinal, identity in enumerate(identities)
         }
 
+        from workflow_backends.common.extxyz_replay import IndexedExtxyzReplay
+        self._replay = IndexedExtxyzReplay(sample_dir, self._records)
+
     @staticmethod
     def _record(row: dict[str, object]) -> ObservationRecord:
         task_index = int(row["task_index"])
@@ -99,7 +102,7 @@ class _RelaxObservationSource:
             system_id=str(row["selection_group_id"]),
             task_index=task_index,
             frame_index=int(row["frame_index"]),
-            md_step=optimizer_step,
+            md_step=None,
             student_uncertainty=float(row["force_deviation"]),
             locator=locator,
             sampling_role_id=str(row["sampling_role_id"]),
@@ -112,45 +115,8 @@ class _RelaxObservationSource:
     def catalog(self) -> tuple[ObservationRecord, ...]:
         return self._records
 
-    def replay(
-        self,
-        ordered_identities: Sequence[str],
-        *,
-        chunk_size: int,
-    ) -> Iterator[tuple[Atoms, ...]]:
-        size = int(chunk_size)
-        identities = tuple(str(item) for item in ordered_identities)
-        if size <= 0:
-            raise ValueError("relax observation replay chunk_size must be positive")
-        if any(not item for item in identities) or len(set(identities)) != len(identities):
-            raise ValueError("relax replay identities must be unique and non-empty")
-        missing = tuple(
-            item for item in identities if item not in self._record_by_identity
-        )
-        if missing:
-            raise ValueError(
-                f"relax replay identity is absent from the catalog: {missing[0]}"
-            )
-        wanted = set(identities)
-        loaded: dict[str, Atoms] = {}
-        task_indices = sorted(
-            {self._record_by_identity[item].task_index for item in identities}
-        )
-        for task_index in task_indices:
-            path = (
-                self._sample_dir
-                / "tasks"
-                / f"task_{task_index:06d}"
-                / "observations.extxyz"
-            )
-            for frame in iread(path, index=":"):
-                identity = str(frame.info.get("structure_id", ""))
-                if identity in wanted:
-                    loaded[identity] = frame
-        if set(loaded) != wanted:
-            raise ValueError("relax observation replay evidence is incomplete")
-        for start in range(0, len(identities), size):
-            yield tuple(loaded[item] for item in identities[start : start + size])
+    def replay(self, ordered_identities, *, chunk_size):
+        yield from self._replay.replay(ordered_identities, chunk_size=chunk_size)
 
 
 class AseRelaxSamplingNativeOps:
@@ -598,6 +564,8 @@ class AseRelaxSamplingNativeOps:
                 seed_id=seed_id,
             )
             frame = snapshot.frame.copy()
+            for key in ('md_step', 'md_steps', 'md_time_fs', 'timestep'):
+                frame.info.pop(key, None)
             frame.info.update(
                 system_id=task.selection_group_id,
                 structure_id=identity,
@@ -726,7 +694,8 @@ class AseRelaxSamplingNativeOps:
             return validate_failure(self, task_dir, expected_context, result)
         success_path = task_dir / "task_completion_receipt.json"
         success = self._read_json(success_path) if success_path.is_file() else None
-        if context != expected_context:
+        from workflow_backends.common.task_context import matches_task_context
+        if not matches_task_context(context, expected_context):
             raise ValueError("relax task context does not match the current task intent")
         if require_success and success is None:
             raise ValueError("relax task completion receipt is missing")

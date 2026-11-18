@@ -22,7 +22,9 @@ from workflow_core.common.sampling_plan import (
 )
 from workflow_core.common.widom import WidomSamplingParameters
 from workflow_core.common.gcmc import GcmcSamplingParameters
+from workflow_core.common.lammps_control import LammpsSamplingOptions
 from workflow_core.common.md_mc import IdentitySwapParameters
+from workflow_core.common.native_protocol import NativeProtocolRequest
 
 
 class SamplingModelSet(Protocol):
@@ -116,8 +118,23 @@ class SamplingTaskIntent:
     widom: WidomSamplingParameters | None = None
     md_mc: IdentitySwapParameters | None = None
     cycles: int | None = None
+    lammps: LammpsSamplingOptions | None = None
+    protocol_request: NativeProtocolRequest | None = None
 
     def __post_init__(self) -> None:
+        if self.protocol_request is not None:
+            if not isinstance(self.protocol_request, NativeProtocolRequest):
+                raise TypeError('native protocol requires typed scientific requests')
+            if (self.kind not in {'native','nvt','npt'} or self.ensemble not in {'native','nvt','npt'}
+                or any(not isinstance(v,str) or not v for v in (self.task_id,self.system_id,
+                    self.condition_group_id,self.sampling_role_id,self.selection_group_id))
+                or any(v is not None for v in (self.neb,self.relax,self.gcmc,self.widom,self.md_mc,self.program))
+                or type(self.source_frame_index) is not int or self.source_frame_index<0
+                or self.steps != self.protocol_request.steps
+                or self.temperature_k != self.protocol_request.temperature_k
+                or self.pressure_bar != self.protocol_request.pressure_bar):
+                raise ValueError('invalid native-protocol task intent')
+            return
         task_id = str(self.task_id).strip()
         system_id = str(self.system_id).strip()
         ensemble = str(self.ensemble).strip().lower()
@@ -374,7 +391,9 @@ class SamplingEvidenceIntent:
                                     if task.gcmc is not None else {}
                                 ),
                                 **({'widom': asdict(task.widom)} if task.widom is not None else {}),
+                                **({'lammps': task.lammps.to_payload()} if task.lammps is not None else {}),
                                 **({'md_mc': asdict(task.md_mc)} if task.md_mc is not None else {}),
+                                **({'protocol_request':asdict(task.protocol_request)} if task.protocol_request is not None else {}),
                                 **(
                                     {"relax": {
                                         **relax_parameters_payload(task.relax),

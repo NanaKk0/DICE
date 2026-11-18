@@ -1,0 +1,93 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1330" height="510" viewBox="55 350 1330 510" role="img" aria-labelledby="figure-title figure-description">
+  <title id="figure-title">DICE workflow</title>
+  <desc id="figure-description">Student training and sampling repeat within an iteration. High-support configurations receive teacher labels; selected low-support configurations undergo DFT labelling, with reference labels updating the next iteration's teacher.</desc>
+  <defs>
+
+    <linearGradient id="salmon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc1b9" />
+      <stop offset="0.48" stop-color="#ffb0a6" />
+      <stop offset="1" stop-color="#ffb6aa" />
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b7e2ff" />
+      <stop offset="0.5" stop-color="#add9fc" />
+      <stop offset="1" stop-color="#b5e0fa" />
+    </linearGradient>
+    <linearGradient id="yellow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffedb4" />
+      <stop offset="0.5" stop-color="#ffebb0" />
+      <stop offset="1" stop-color="#fff1bd" />
+    </linearGradient>
+    <marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="15" viewBox="0 0 16 15" refX="15" refY="7.5" orient="auto">
+      <path d="M 0 0 L 15 7.5 L 0 15 Z" fill="#080808" />
+    </marker>
+    <style>
+      text { font-family: Arial, sans-serif; fill: #000000; }
+      .node { stroke: #080808; stroke-width: 1.55; fill: #eee8f7; }
+      .boundary { stroke: #080808; stroke-width: 2.05; fill: #ffffff; }
+      .connector { fill: none; stroke: #080808; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+      .arrow { marker-end: url(#arrow); }
+      .body { font-size: 26px; font-weight: 400; text-anchor: middle; }
+      .strong { font-size: 26px; font-weight: 700; text-anchor: middle; }
+      .panel-title { font-size: 38px; font-weight: 700; }
+      .route-label { font-size: 24px; font-weight: 400; }
+      .legend-text { font-size: 22.5px; font-weight: 400; }
+    </style>
+  </defs>
+
+  <rect id="canvas" x="55" y="350" width="1330" height="510" fill="#ffffff" />
+
+  <g id="dice">
+    <rect id="rn-loop-boundary" class="boundary" x="855" y="399" width="499" height="340" rx="32" />
+    <g id="dice-connectors" class="connector">
+      <path id="teacher-training-to-teacher" d="M 247 551 H 322" class="arrow" />
+      <path id="teacher-to-routing" d="M 462 551 H 537" class="arrow" />
+      <path id="high-support-to-labels" d="M 695 526 H 889" class="arrow" />
+      <path id="teacher-labels-to-student-training" d="M 1062 524 H 1135" class="arrow" />
+      <path id="student-training-to-exploration" d="M 1285 524 H 1308 Q 1328 524 1328 544 V 648 Q 1328 668 1308 668 H 1224" class="arrow" />
+      <path id="exploration-to-support-routing" d="M 967 669 H 690 Q 668 669 668 647 V 610" class="arrow" />
+      <path id="low-support-to-selective-dft" d="M 616 610 V 765" class="arrow" />
+      <path id="selective-dft-to-teacher-training" d="M 504 800 H 186.5 Q 164.5 800 164.5 778 V 595" class="arrow" />
+    </g>
+
+    <g id="dice-teacher-training">
+      <rect class="node" x="82" y="507" width="165" height="88" rx="16" style="fill:#F3C4B4" />
+      <text class="body" x="164.5" y="545"><tspan x="164.5">Teacher</tspan><tspan x="164.5" dy="29">training</tspan></text>
+    </g>
+    <g id="dice-teacher">
+      <rect class="node" x="322" y="509" width="140" height="86" rx="16" style="fill:#F8D8CB" />
+      <text class="body" x="392.0" y="560">Teacher</text>
+    </g>
+    <g id="support-guided-routing">
+      <rect class="node" x="537" y="494" width="158" height="116" rx="18" style="fill:#D7C7ED" />
+      <text class="strong" x="616.0" y="529"><tspan x="616.0">Support-</tspan><tspan x="616.0" dy="29">guided</tspan><tspan x="616.0" dy="29">routing</tspan></text>
+    </g>
+    <text id="high-support-label" class="route-label" x="781" y="511" text-anchor="middle" style="font-size:23px;font-weight:700">High support</text>
+    <text id="low-support-label" class="route-label" x="604" y="687" text-anchor="end" font-weight="700" style="font-weight:700">Low support</text>
+
+    <g id="dice-teacher-labelled-data">
+      <rect class="node" x="905" y="462" width="156" height="105" rx="15" style="fill:#B7D7C6" />
+      <rect class="node" x="897" y="471" width="157" height="105" rx="15" style="fill:#C9E3D5" />
+      <rect class="node" x="889" y="481" width="159" height="102" rx="16" style="fill:#D9EEE4" />
+      <text class="body" x="968.5" y="513"><tspan x="968.5">Teacher-</tspan><tspan x="968.5" dy="28">labelled</tspan><tspan x="968.5" dy="28">data</tspan></text>
+    </g>
+    <g id="dice-student-training">
+      <rect class="node" x="1135" y="484" width="150" height="81" rx="16" style="fill:#C9DCF2" />
+      <text class="body" x="1210" y="519"><tspan x="1210">Student</tspan><tspan x="1210" dy="29">training</tspan></text>
+    </g>
+    <g id="student-driven-sampling">
+      <rect class="node" x="967" y="625" width="257" height="83" rx="16" style="fill:#AFCDEC" />
+      <text class="strong" x="1095.5" y="657"><tspan x="1095.5">Student-driven</tspan><tspan x="1095.5" dy="29">sampling</tspan></text>
+    </g>
+    <g id="dice-selective-dft">
+      <rect class="node" x="504" y="765" width="224" height="69" rx="15" style="fill:#F5D994" />
+      <text class="strong" x="616.0" y="808">Selective DFT</text>
+    </g>
+    <text id="iter-title" x="1120" y="426" text-anchor="middle" font-size="26" font-weight="700">Within one iteration</text>
+    <text id="rn-label" x="1120" y="451" text-anchor="middle" font-size="22">r0, r1, …</text>
+    <text id="update-teacher-label" class="route-label" x="334" y="785" text-anchor="middle" style="font-weight:700">Update teacher</text>
+    <text class="panel-title" x="84" y="391">DICE</text>
+  </g>
+
+  </svg>

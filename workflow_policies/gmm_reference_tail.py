@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 import tempfile
@@ -329,6 +330,14 @@ def fit_gmm_router(request: GMMReferenceFitRequest) -> GMMReferenceFitResult:
     except ImportError as exc:  # pragma: no cover - deployment preflight owns this path
         raise RuntimeError("gmm-reference-tail fitting requires scikit-learn") from exc
 
+    # Numerical fitting budget only; preserve the default and convergence criterion.
+    try:
+        max_iterations = int(os.environ.get("DICE_GMM_MAX_ITER", "200"))
+    except ValueError as exc:
+        raise ValueError("DICE_GMM_MAX_ITER must be a positive integer") from exc
+    if max_iterations <= 0:
+        raise ValueError("DICE_GMM_MAX_ITER must be a positive integer")
+
     element_arrays: dict[str, dict[str, np.ndarray]] = {}
     element_manifest: dict[str, dict[str, object]] = {}
     atom_p = np.empty(descriptors.shape[0], dtype=np.float64)
@@ -363,7 +372,7 @@ def fit_gmm_router(request: GMMReferenceFitRequest) -> GMMReferenceFitResult:
             covariance_type="full",
             reg_covar=GMM_REG_COVAR,
             random_state=POLICY_RANDOM_SEED,
-            max_iter=200,
+            max_iter=max_iterations,
         ).fit(latent)
         if not bool(mixture.converged_):
             raise RuntimeError(

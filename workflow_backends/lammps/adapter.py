@@ -71,6 +71,7 @@ class LammpsSamplingBackendFactory:
                     for recipe in binding.recipes
                 },
                 plumed_sources=binding.system_inputs,
+                group_inputs={str(recipe.condition_group_id): recipe.inputs for recipe in binding.recipes},
             )
         single = len(binding.recipes) == 1 and binding.recipes[0].ensemble is None
         if not single and any(recipe.ensemble is None for recipe in binding.recipes):
@@ -104,6 +105,23 @@ class LammpsSamplingNativeOps:
     recipes: Mapping[str, Path] | None = None
     group_recipes: Mapping[str, Path] | None = None
     plumed_sources: Mapping[str, Path] = field(default_factory=dict)
+    group_inputs: Mapping[str, Mapping[str, Path]] = field(default_factory=dict)
+    _protocol_backend: object = field(default=None, init=False, repr=False)
+
+    def _protocols(self, evidence):
+        if not isinstance(evidence.plan, ExplicitSamplingPlan) or not any(
+            task.protocol_request is not None for task in evidence.plan.tasks_for_round(evidence.round_index)):
+            return None
+        if self._protocol_backend is None:
+            from workflow_backends.lammps.protocol_sampler import NativeLammpsProtocolOps
+            self._protocol_backend = NativeLammpsProtocolOps(self.executor, self.type_map, dict(self.group_recipes or {}), self.group_inputs)
+        return self._protocol_backend
+
+    @staticmethod
+    def _has_ordinary(evidence):
+        return not isinstance(evidence.plan, ExplicitSamplingPlan) or any(
+            task.protocol_request is None and task.kind not in {'neb','relax','gcmc_md','widom'}
+            for task in evidence.plan.tasks_for_round(evidence.round_index))
 
     def __post_init__(self) -> None:
         declarations = sum(
@@ -133,6 +151,10 @@ class LammpsSamplingNativeOps:
 
     def execute(self, request: SamplingExecutionRequest) -> SamplingExecutionResult:
         evidence = request.evidence
+        protocols = self._protocols(evidence)
+        protocol_result = protocols.execute(request) if protocols is not None else None
+        if not self._has_ordinary(evidence):
+            return protocol_result
         native_models = (
             evidence.models
             if isinstance(evidence.models, EffectiveSamplingModelPlan)
@@ -158,19 +180,19 @@ class LammpsSamplingNativeOps:
         )
         return SamplingExecutionResult(
             sample_dir=evidence.sample_dir,
-            failed_task_count=LammpsObservationSource(
+            failed_task_count=getattr(protocol_result, 'failed_task_count', 0) + LammpsObservationSource(
                 sample_dir=evidence.sample_dir, run_json_path=evidence.run_json_path,
                 iter_index=evidence.iter_index, round_index=evidence.round_index,
                 type_map=self.type_map, model_count=len(evidence.model_paths),
             ).failed_task_count,
             task_count=(
                 sum(
-                    task.kind not in {"neb", "relax", "gcmc_md", "widom"}
+                    task.kind not in {"neb", "relax", "gcmc_md", "widom"} and task.protocol_request is None
                     for task in evidence.plan.tasks_for_round(evidence.round_index)
                 )
                 if isinstance(evidence.plan, ExplicitSamplingPlan)
                 else evidence.plan.total_tasks
-            ),
+            ) + (protocol_result.task_count if protocol_result is not None else 0),
         )
 
     def observe_evidence(
@@ -181,7 +203,10 @@ class LammpsSamplingNativeOps:
     def open_current(
         self, request: SamplingEvidenceRequest
     ) -> SamplingObservationResult:
-        return SamplingObservationResult(
+        protocols = self._protocols(request)
+        if protocols is not None and not self._has_ordinary(request):
+            return protocols.open_current(request)
+        ordinary = SamplingObservationResult(
             LammpsObservationSource(
                 sample_dir=request.sample_dir,
                 run_json_path=request.run_json_path,
@@ -201,10 +226,19 @@ class LammpsSamplingNativeOps:
                 ),
             )
         )
+        if protocols is None:
+            return ordinary
+        from workflow_backends.hybrid_sampling import _HybridObservationSource
+        return SamplingObservationResult(_HybridObservationSource(ordinary.source, protocols.open_current(request).source))
 
     def validate_current(
         self, request: SamplingEvidenceRequest
     ) -> SamplingValidationResult:
+        protocols = self._protocols(request)
+        if protocols is not None:
+            valid = protocols.validate_current(request)
+            if not valid.complete or not self._has_ordinary(request):
+                return valid
         model_evidence = self._model_evidence(request)
         arguments: dict[str, Any] = {
             **self._recipe_arguments(),

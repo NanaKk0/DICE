@@ -2542,7 +2542,7 @@ def _sample(
         report.summary(
             _sampling_block_summary(
                 config,
-                plan=plan,
+                plan=evidence.plan,
                 round_index=round_index,
                 system_count=len(evidence.systems),
                 model_count=model_count,
@@ -2585,7 +2585,9 @@ def _sampling_block_summary(
         else configured_backend
     )
 
-    def task_steps(task: object) -> int:
+    def task_steps(task: object) -> int | None:
+        if getattr(task,'protocol_request',None) is not None:
+            return task.protocol_request.steps
         if getattr(task, 'widom', None) is not None:
             return 0
         if getattr(task, 'gcmc', None) is not None:
@@ -2614,7 +2616,8 @@ def _sampling_block_summary(
         tasks=len(round_tasks),
         systems=int(system_count),
         temperatures=len(temperatures),
-        total_steps=sum(task_steps(task) for task in round_tasks),
+        total_steps=(sum(task_steps(task) for task in round_tasks)
+                     if all(task_steps(task) is not None for task in round_tasks) else None),
         mc_attempts=sum(int(task.cycles)*task.gcmc.moves for task in round_tasks
                         if getattr(task, 'gcmc', None) is not None)
                     + sum(task.md_mc.planned_attempts(task.steps) for task in round_tasks
@@ -2973,6 +2976,8 @@ def _sampling_evidence_intent(
                     "relax": condition.relax,
                     "gcmc": condition.gcmc,
                     "widom": condition.widom,
+                    "lammps": condition.lammps,
+                    "protocol_request": condition.protocol_request,
                     "md_mc": condition.md_mc,
                     "cycles": condition.cycles,
                 }
@@ -3356,6 +3361,8 @@ def _artifact_checks(
                         "relax": condition.relax,
                         "gcmc": condition.gcmc,
                         "widom": condition.widom,
+                        "lammps": condition.lammps,
+                        "protocol_request": condition.protocol_request,
                         "md_mc": condition.md_mc,
                         "cycles": condition.cycles,
                     }
