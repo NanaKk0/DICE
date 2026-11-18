@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from workflow_core.common.lammps_control import LammpsSamplingOptions
+
+from dataclasses import dataclass, replace
+from workflow_core.common.native_protocol import NativeProtocolRequest
 import math
 
 from workflow_core.common.gcmc import GcmcSamplingParameters
@@ -357,6 +360,8 @@ class SamplingConditionGroup:
     gcmc: GcmcSamplingParameters | None = None
     widom: WidomSamplingParameters | None = None
     md_mc: IdentitySwapParameters | None = None
+    lammps: LammpsSamplingOptions | None = None
+    protocol_request: NativeProtocolRequest | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -384,6 +389,8 @@ class ResolvedSamplingTask:
     widom: WidomSamplingParameters | None = None
     md_mc: IdentitySwapParameters | None = None
     cycles: int | None = None
+    lammps: LammpsSamplingOptions | None = None
+    protocol_request: NativeProtocolRequest | None = None
 
     @property
     def system_id(self) -> str:
@@ -514,7 +521,11 @@ class ExplicitSamplingPlan:
             for role_id in group.sampling_role_ids:
                 if role_id not in active_roles:
                     continue
-                if group.kind == "nvt" or (group.kind == 'md_mc' and not group.pressures_bar):
+                if group.protocol_request is not None:
+                    conditions = ((temperature, pressure)
+                        for temperature in (group.temperatures_k or (None,))
+                        for pressure in (group.pressures_bar or (None,)))
+                elif group.kind == "nvt" or (group.kind == 'md_mc' and not group.pressures_bar):
                     conditions = ((temperature, None) for temperature in group.temperatures_k)
                 elif group.kind in {"npt", "gcmc_md", "md_mc"}:
                     conditions = (
@@ -555,6 +566,10 @@ class ExplicitSamplingPlan:
                             relax=relax,
                             gcmc=group.gcmc,
                             widom=group.widom,
+                            lammps=group.lammps,
+                            protocol_request=(replace(group.protocol_request, temperature_k=temperature,
+                                pressure_bar=pressure, steps=group.steps_by_round[int(round_index)])
+                                if group.protocol_request is not None else None),
                             md_mc=group.md_mc,
                             cycles=(group.gcmc.cycles_by_round[int(round_index)]
                                     if group.gcmc is not None else None),
@@ -594,24 +609,11 @@ class ExplicitSamplingPlan:
                 for role_id, index in zip(role_ids, indices, strict=True)
             )
         groups = tuple(
-            SamplingConditionGroup(
-                condition_group_id=group.condition_group_id,
-                kind=group.kind,
-                sampling_role_ids=tuple(
-                    expanded_role
-                    for role_id in group.sampling_role_ids
-                    for expanded_role in expanded_by_role[role_id]
-                ),
-                steps_by_round=group.steps_by_round,
-                temperatures_k=group.temperatures_k,
-                pressures_bar=group.pressures_bar,
-                program=group.program,
-                neb=group.neb,
-                relax=group.relax,
-                gcmc=group.gcmc,
-                widom=group.widom,
-                md_mc=group.md_mc,
-            )
+            replace(group, sampling_role_ids=tuple(
+                expanded_role
+                for role_id in group.sampling_role_ids
+                for expanded_role in expanded_by_role[role_id]
+            ))
             for group in self.condition_groups
         )
         rounds = tuple(

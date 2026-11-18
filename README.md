@@ -1,77 +1,39 @@
 # DICE
 
-DICE (Distillation-driven Co-Evolution) coordinates active learning for
-machine-learning interatomic potentials. A teacher labels structures, a
-student explores configurations, and DICE selects candidates for new
-first-principles (FP) calculations. Returned FP labels improve a later iteration.
+DICE (Distillation-driven Co-Evolution) combines active learning and knowledge distillation for interatomic potential development. A student explores new configurations, and DICE evaluates the reliability of the teacher's labels. Reliable teacher labels expand student training data; configurations requiring DFT are selected for reference calculations, whose labels update the teacher in the next iter.
 
-| Your task | Start here |
+## Get started
+
+| Read | Purpose |
 | --- | --- |
-| Install DICE and try the workflow without GPUs | [Installation](docs/install.md) → [CPU quickstart](docs/quickstart.md) |
-| Run your own material with native engines | [Understand the workflow](docs/workflow.md) → [Your first scientific run](docs/own-system.md) |
-| Check a field, backend or recovery command | [Documentation directory](docs/index.md) |
+| [Introduction to DICE](docs/getting-started/introduction.md) | Workflow and preparation checklist |
+| [Installation](docs/getting-started/installation.md) | Install the control package and check the CLI |
+| [Quickstart](docs/getting-started/quickstart.md) | Run the water example through the first iter, DFT-label return and the next iter |
 
-## Install and try
-
-DICE's control environment requires Python 3.10 or newer on Linux. From a
-shell with your chosen Python available:
+Use Linux and Python 3.10 or newer. From the source checkout:
 
 ```sh
 git clone https://github.com/NanaKk0/DICE.git
 cd DICE
-python -m venv .venv
+python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install .
 dice --help
-python examples/cpu_mock/run.py /tmp/dice-first-demo
 ```
 
-Choose a new or empty demo directory. This example runs two rounds with
-synthetic models, labels and trajectories. It checks the real workflow's
-coordination and recovery; it does not train a scientific potential.
-The [quickstart](docs/quickstart.md) explains its outputs and continuation.
+Follow the [Quickstart](docs/getting-started/quickstart.md) directly in the supplied example directory. See [Backend environments](docs/guides/backends.md) and [Compute resources](docs/guides/resources.md) for installation-specific settings.
 
-## Run a scientific iteration
+## Documentation and support
 
-Install the engines required by your selected teacher, student and sampler
-separately. Prepare labelled bootstrap data, starting geometries, compatible
-models and native recipes. In the scientific run directory:
+- [Documentation index](docs/index.md): guides, concepts, references and development.
+- [Inspect results and resume](docs/guides/results-and-recovery.md): outputs, continuation and rebuilds.
+- [Troubleshooting](docs/guides/troubleshooting.md): configuration, data, environment and task errors.
+- [CLI reference](docs/reference/cli.md): preflight, execution, recovery and round changes.
+- [DICE Operator skill](skills/dice-operator/README.md): install reusable guidance for Codex, Claude Code and compatible agents.
+- [GitHub Issues](https://github.com/NanaKk0/DICE/issues): problems and suggestions.
 
-```sh
-dice run.json --environment environment.json --preflight
-dice run.json --environment environment.json
-```
+## Development and licensing
 
-One invocation executes one iteration, containing the configured student rounds:
+See [Contributing](docs/development/contributing.md) for development installation, tests and contributions, and [CHANGELOG](CHANGELOG.md) for changes.
 
-```text
-teach/train → teach/screen → teach/scan (single teacher)
-            → r0/train → r0/sample → r0/screen
-            → r1/train → r1/sample → r1/screen → fp
-```
-
-The default endpoint is `iterN/fp/selected.xyz`, for external FP labelling.
-A later invocation declares the returned labels in `fp_data`. An explicit
-`fp.label` can instead append a supported local calculator operation.
-See the [complete DPA4/DPA4C walkthrough](docs/own-system.md).
-
-## Models and compatibility
-
-Teachers use MACE/MACE-LES or DeepMD; students use DeepMD or NEP. DeepMD
-students sample through LAMMPS, and NEP students through GPUMD. Exact model,
-build and execution requirements are in the [capability matrix](docs/support.md)
-and [model guide](docs/native-models.md).
-
-The 2026-11-11 update adds newer DeepMD preset and ZBL/readout compatibility.
-DPA4 retains strict short-distance numerical limitations; see the
-[compatibility notes](docs/deepmd-compatibility.md) before collision studies.
-Foundation weights and native engine binaries are obtained separately.
-
-## Development and licences
-
-Install `python -m pip install -e '.[test]'` to run `python -m pytest -q`.
-See [development](docs/development.md) for documentation builds and testing,
-and [changes](docs/changelog.md) for source-distribution updates.
-
-Code is MIT; author-owned documentation, figures and data use CC BY 4.0.
-Third-party components retain their own licences. See [LICENSING.md](LICENSING.md).
+Code is MIT; author-owned documentation, figures and data use CC BY 4.0. Third-party materials retain their licences. See [Licensing and attribution](LICENSING.md).

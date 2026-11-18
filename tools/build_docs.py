@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 from html.parser import HTMLParser
 import os
 from pathlib import Path
@@ -16,10 +17,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def pages(root: Path) -> list[Path]:
-    candidates = [Path('README.md'), *[p.relative_to(root) for p in sorted((root/'docs').glob('*.md'))],
-                  Path('examples/cpu_mock/README.md'), Path('examples/iteration_handoff/README.md'),
+    candidates = [Path('README.md'), Path('CHANGELOG.md'),
+                  *[p.relative_to(root) for p in sorted((root/'docs').rglob('*.md'))],
+                  Path('tests/fixtures/cpu_mock/README.md'), Path('tests/fixtures/iteration_handoff/README.md'),
+                  Path('examples/dpa4_dpa4c/README.md'),
+                  Path('examples/dpa4_dpa4c/data/NOTICE.md'),
+                  Path('examples/dpa4_dpa4c/models/README.md'),
+                  Path('skills/dice-operator/README.md'),
+                  Path('skills/dice-operator/LICENSE-DATA.md'),
                   Path('LICENSING.md'), Path('LICENSE-DATA.md')]
     return [p for p in candidates if (root/p).is_file()]
+
+
+LEGACY_PAGES = {
+    'install': 'getting-started/installation',
+    'quickstart': 'getting-started/quickstart',
+    'own-system': 'getting-started/quickstart',
+    'workflow': 'concepts/workflow', 'screening': 'concepts/screening',
+    'environments': 'reference/environment', 'execution': 'reference/execution',
+    'data': 'reference/data', 'sampling': 'reference/sampling',
+    'configuration': 'reference/run-json',
+    'configuration-fields': 'reference/appendices/configuration-fields',
+    'deepmd': 'guides/deepmd', 'native-models': 'guides/deepmd',
+    'deepmd-compatibility': 'guides/deepmd', 'support': 'guides/backends',
+    'mace': 'guides/experimental/mace', 'nep': 'guides/experimental/nep',
+    'first-principles': 'guides/experimental/cp2k-abacus',
+    'recovery': 'guides/results-and-recovery',
+    'troubleshooting': 'guides/troubleshooting',
+    'development': 'development/contributing',
+}
 
 
 def target_path(relative: Path) -> Path:
@@ -123,6 +149,25 @@ def build(root: Path, destination: Path) -> int:
         document += '</style></head><body><nav aria-label="Documentation">'+navigation(root, relative)+'</nav><main>'+rewrite_links(body, root, relative)+'</main></body></html>'
         out = destination/target_path(relative);out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(document, encoding='utf-8')
+    for old, new in LEGACY_PAGES.items():
+        source = root/'docs'/f'{new}.md'
+        if not source.is_file():
+            continue
+        parsed = Links(); parsed.feed(render(source.read_text(encoding='utf-8')))
+        href = new + '.html'
+        redirect = '<!doctype html><html lang="en"><meta charset="utf-8">'
+        redirect += '<title>Page moved · DICE</title>'
+        redirect += '<meta http-equiv="refresh" content="0;url='+html.escape(href, quote=True)+'">'
+        redirect += '<p>This page moved to <a href="'+html.escape(href, quote=True)+'">the updated guide</a>.</p>'
+        redirect += '<script>const target='+json.dumps(href)+';const anchors='+json.dumps(sorted(parsed.ids))+';'
+        redirect += 'let suffix="";try{if(anchors.includes(decodeURIComponent(location.hash.slice(1))))suffix=location.hash;}catch(e){}'
+        redirect += 'location.replace(target+suffix);</script></html>'
+        out = destination/'docs'/f'{old}.html'
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(redirect, encoding='utf-8')
+    if (root/'CHANGELOG.md').is_file():
+        out=destination/'docs/changelog.html';out.parent.mkdir(parents=True,exist_ok=True)
+        out.write_text('<!doctype html><html lang="en"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=../CHANGELOG.html"><title>Changelog · DICE</title><a href="../CHANGELOG.html">Changelog</a></html>',encoding='utf-8')
     (destination/'.nojekyll').touch()
     print(f'Built {len(all_pages)} documentation pages in {destination}')
     return len(all_pages)

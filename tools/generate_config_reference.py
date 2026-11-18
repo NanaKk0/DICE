@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = Path("workflow_core/lifecycle/config.py")
-DESTINATION = Path("docs/configuration-fields.md")
+DESTINATION = Path("docs/reference/appendices/configuration-fields.md")
 
 
 def strings(node: ast.AST, names: dict[str, set[str]]) -> set[str]:
@@ -71,7 +71,7 @@ def inventory(source: str) -> str:
         f"`{SOURCE}` using static analysis. Check drift with `--check`.", "",
         "This inventory lists accepted keys. Branch-dependent keys are unioned (notably condition",
         "kinds and teacher/student p-band helpers). Requiredness, defaults, units and",
-        "cross-field rules are in [configuration.md](configuration.md) and enforced",
+        "cross-field rules are in [run.json](../run-json.md) and enforced",
         "by the real loader. Expressions below are the loader's field labels;",
         "`prefix` means the currently visited condition group or segment.", "",
         "Required top-level keys: " + ", ".join(f"`{key}`" for key in sorted(required)) + ".", "",
@@ -83,7 +83,7 @@ def inventory(source: str) -> str:
         lines.append(f"| `{function}:{line}` | `{label}` | " + ", ".join(f"`{key}`" for key in sorted(keys)) + " |")
     lines += ["", "Temperature-program segments and symmetric-strain endpoint components are",
               "validated with exact-set comparisons: see",
-              "the explicit segment/cell reference in [configuration.md](configuration.md).", ""]
+              "the explicit segment/cell reference in [run.json](../run-json.md).", ""]
     return "\n".join(lines)
 
 
@@ -98,6 +98,7 @@ def main() -> None:
             parser.exit(1, "Configuration-key inventory drift; regenerate and review semantics.\n")
         print("Configuration-key inventory matches the shipped loader.")
     else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(generated, encoding="utf-8")
         print(f"Wrote {DESTINATION}")
 

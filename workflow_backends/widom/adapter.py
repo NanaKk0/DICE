@@ -152,22 +152,21 @@ class WidomObservationSource:
     allows_empty = True
     def __init__(self, tasks):
         self.failed_task_count = sum(r['task_status'] == 'FAILED' for _, r in tasks)
+        from workflow_backends.common.frame_index import index_extxyz_frames
         self._records = []; self._offsets = {}
         for root, result in tasks:
             path = Path(root)/'observations.extxyz'
-            with path.open('rb') as stream:
-                for row in result['observations']:
-                    start = stream.tell(); count = int(stream.readline())
-                    for _ in range(count+1):
-                        if not stream.readline().endswith(b'\n'): raise ValueError('widom truncated frame')
-                    self._offsets[row['structure_id']] = (path, start, stream.tell()-start, path.stat())
-                    self._records.append(ObservationRecord(
-                        structure_id=row['structure_id'], system_id=row['selection_group_id'],
-                        task_index=row['task_index'], frame_index=row['frame_index'], md_step=None,
-                        student_uncertainty=row['force_deviation'],
-                        locator=ObservationLocator('WIDOM', row['task_index'], row['frame_index'], None),
-                        sampling_role_id=row['sampling_role_id'], selection_group_id=row['selection_group_id'],
-                        condition_group_id=row['condition_group_id'], task_id=row['task_id'], phase='widom'))
+            rows = result['observations']
+            index = index_extxyz_frames(path, expected_count=len(rows))
+            for ordinal, row in enumerate(rows):
+                self._offsets[row['structure_id']] = (index, ordinal)
+                self._records.append(ObservationRecord(
+                    structure_id=row['structure_id'], system_id=row['selection_group_id'],
+                    task_index=row['task_index'], frame_index=row['frame_index'], md_step=None,
+                    student_uncertainty=row['force_deviation'],
+                    locator=ObservationLocator('WIDOM', row['task_index'], row['frame_index'], None),
+                    sampling_role_id=row['sampling_role_id'], selection_group_id=row['selection_group_id'],
+                    condition_group_id=row['condition_group_id'], task_id=row['task_id'], phase='widom'))
         if len(self._offsets) != len(self._records): raise ValueError('widom duplicate identity')
 
     def catalog(self): return tuple(self._records)
@@ -177,15 +176,16 @@ class WidomObservationSource:
         if isinstance(chunk_size, bool) or chunk_size <= 0 or len(set(ids)) != len(ids) or any(i not in self._offsets for i in ids):
             raise ValueError('widom invalid replay request')
         for start in range(0, len(ids), chunk_size):
-            frames = []
-            for identity in ids[start:start+chunk_size]:
-                path, offset, length, stamp = self._offsets[identity]
-                if path.is_symlink() or path.stat() != stamp: raise ValueError('widom replay evidence changed')
-                with path.open('rb') as f:
-                    f.seek(offset); frame = read(StringIO(f.read(length).decode()), format='extxyz')
-                if frame.info['structure_id'] != identity: raise ValueError('widom replay identity mismatch')
-                frames.append(frame)
-            yield tuple(frames)
+            wanted, groups, loaded = ids[start:start+chunk_size], {}, {}
+            for identity in wanted:
+                index, ordinal = self._offsets[identity]
+                groups.setdefault(index.path, (index, []))[1].append((identity, ordinal))
+            for index, rows in groups.values():
+                for (identity, _ordinal), raw in zip(rows, index.read(ordinal for _,ordinal in rows), strict=True):
+                    frame = read(StringIO(raw.decode()), format='extxyz')
+                    if frame.info['structure_id'] != identity: raise ValueError('widom replay identity mismatch')
+                    loaded[identity] = frame
+            yield tuple(loaded[identity] for identity in wanted)
 
 
 class WidomSamplingNativeOps:

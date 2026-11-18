@@ -1,0 +1,4 @@
+interface:
+  display_name: "DICE Operator"
+  short_description: "Configure, run, and recover DICE workflows"
+  default_prompt: "Use $dice-operator to prepare, inspect, run, or resume a DICE workflow."

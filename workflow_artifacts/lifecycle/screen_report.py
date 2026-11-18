@@ -380,7 +380,7 @@ def _normalize_thresholds(
         ):
             raise ValueError("screen report threshold is not finite")
         if (
-            evidence_kind != JOINT_DIRECT_EVIDENCE["name"]
+            evidence_kind == GMM_EVIDENCE["name"]
             and item is not None
             and not 0 <= float(item) <= 1
         ):
@@ -393,7 +393,7 @@ def _normalize_thresholds(
         ceiling = result["ceiling"]
         if ceiling is not None and not float(result["floor"]) < float(ceiling) <= 1:
             raise ValueError("GMM screen report ceiling is invalid")
-    elif evidence_kind == COMMITTEE_EVIDENCE["name"] and not float(result["lo"]) < float(result["hi"]):
+    elif evidence_kind == COMMITTEE_EVIDENCE["name"] and not 0 <= float(result["lo"]) < float(result["hi"]):
         raise ValueError("committee screen report thresholds are invalid")
     elif evidence_kind == JOINT_DIRECT_EVIDENCE["name"] and (
         isinstance(result["pool"], bool)

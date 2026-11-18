@@ -72,6 +72,11 @@ def label_with_ase_models(
         result, uncertainty = _aggregate_payloads(payloads, atom_count=len(atoms), frame_index=frame_index)
         item = copy_atoms_preserving_singlepoint_results(atoms)
         item.calc = SinglePointCalculator(item, **result)
+        # Relabeling replaces reference labels as one coherent prediction.
+        # An input virial may describe a previous DFT/model evaluation.
+        item.info.pop('virial', None)
+        if 'stress' in result and item.cell.rank == 3:
+            item.info['virial'] = -item.get_stress(voigt=False) * item.get_volume()
         item.info["force_uncertainty"] = uncertainty
         item.info["force_std_max"] = uncertainty
         labeled.append(item)

@@ -129,7 +129,7 @@ class NativeLammpsExecutor:
             environment_overrides=execution_environment,
             process_registry=getattr(execution_environment, "process_registry", None),
         )
-        trajectory = root / "traj.lammpstrj"
+        trajectory = root / task.get('trajectory_path', 'traj.lammpstrj')
         deviation = root / "model_devi.out"
         if not trajectory.is_file() or trajectory.stat().st_size <= 0:
             raise ValueError("lifecycle LAMMPS native task did not produce traj.lammpstrj")

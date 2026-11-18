@@ -1,56 +1,60 @@
-# Documentation
+# DICE documentation
 
-Start with the task you want to complete. Commands assume that you have
-activated your DICE control environment; native engines use their own profiles.
+Start with **Introduction → Installation → Quickstart**. The supplied water example covers the first iter, DFT-label return and the next iter.
 
-## First use
+## Get started
 
-| Read in order | What you will accomplish |
+| Page | Task |
 | --- | --- |
-| [Install](install.md) | Obtain the software, install the control package and verify the CLI |
-| [CPU quickstart](quickstart.md) | Run two synthetic rounds, inspect outputs and practise continuation |
-| [Workflow](workflow.md) | Understand the data flow and the difference between rounds and iterations |
-| [Your own system](own-system.md) | Prepare a real DPA4/DPA4C workflow and return external FP labels |
+| [Introduction to DICE](getting-started/introduction.md) | Understand the workflow and preparation checklist |
+| [Installation](getting-started/installation.md) | Install DICE and check its CLI |
+| [Quickstart](getting-started/quickstart.md) | Run the water example and continue iterating |
 
-## Prepare and configure
+## How-to guides
 
-| Guide | Use it for |
+Choose a guide for the aspect of your run you want to change.
+
+| Page | Task |
 | --- | --- |
-| [Data](data.md) | Label units, extxyz, validation populations and returned FP data |
-| [Screening](screening.md) | Support scores, trust, quotas and representative selection |
-| [Sampling](sampling.md) | Seeds, conditions, native protocols and advanced acquisition |
-| [Configuration](configuration.md) | Scientific fields, defaults, applicability and boundary rules |
-| [Accepted-key appendix](configuration-fields.md) | Automatically generated field inventory |
-| [Environments](environments.md) | Engine activation and executable bindings |
-| [Execution](execution.md) | Local/SSH/Slurm placement and operation-specific resources |
-| [Models](native-models.md) | Foundation sources, native versions and model file roles |
-| [DeepMD usage](deepmd.md) | Fine-tuning, exports, compression, ZBL and Kokkos |
-| [DeepMD compatibility](deepmd-compatibility.md) | Presets, ZBL, readout and measured numerical limitations |
+| [Configure backend environments](guides/backends.md) | Activation scripts, executables and operation bindings |
+| [Prepare input files](guides/inputs.md) | Data, seeds, native recipes and optional models |
+| [Configuration overview](guides/configuration.md) | Find each setting's owner and detailed guide |
+| [Configure compute resources](guides/resources.md) | Placement, budgets and concurrency |
+| [Configure sampling](guides/sampling.md) | Native protocols, overrides, batch conditions, seeds and rounds |
+| [Inspect results and resume](guides/results-and-recovery.md) | Locate outputs, continue or rebuild |
+| [Troubleshooting](guides/troubleshooting.md) | Diagnose configuration, data and task failures |
 
-## Other engines and labels
+### Model and labeling backends
 
-| Guide | Use it for |
+| Page | Topic |
 | --- | --- |
-| [MACE/MACE-LES](mace.md) | Teacher recipes, initialization and operation bindings |
-| [NEP/GPUMD](nep.md) | Student model/restart pairs, readout and GPUMD |
-| [First principles](first-principles.md) | External returns and optional local CP2K/ABACUS labels |
+| [Use DeePMD-kit](guides/deepmd.md) | Fine-tuning, element maps, exports and student compression |
+| [MACE](guides/experimental/mace.md) | Teacher integration and environment bindings |
+| [NEP/GPUMD](guides/experimental/nep.md) | Student training, readout and sampling |
+| [CP2K/ABACUS labeling](guides/experimental/cp2k-abacus.md) | Built-in labeling and result interfaces |
 
-## Operate and maintain
+## Concepts
 
-| Guide | Use it for |
+| Page | Topic |
 | --- | --- |
-| [Troubleshooting](troubleshooting.md) | Diagnose common input, model, environment and screening failures |
-| [Recovery](recovery.md) | Continue after interruption or rebuild an explicitly selected suffix |
-| [Capabilities](support.md) | Check backend requirements and qualification boundaries |
-| [Changes](changelog.md) | Source-distribution updates and compatibility history |
-| [Development](development.md) | Run tests, build documentation and understand package responsibilities |
+| [Workflow](concepts/workflow.md) | Iterations, rounds, teacher updates and data flow |
+| [Configuration screening](concepts/screening.md) | GMM support, committee evidence, data routes and representative selection |
 
-## Executable examples
+## Reference
 
-- [CPU lifecycle](../examples/cpu_mock/README.md): synthetic backend services,
-  complete iter0 and two rounds, ordinary continuation and explicit recovery.
-- [FP return](../examples/iteration_handoff/README.md): synthetic external
-  labels returned to iter1 in the same run directory.
+| Page | Contents |
+| --- | --- |
+| [CLI](reference/cli.md) | Options, stages, preflight and recovery |
+| [run.json](reference/run-json.md) | Scientific fields, defaults, units and constraints |
+| [Environment profile](reference/environment.md) | Activation, logical executables and operation bindings |
+| [Execution profile](reference/execution.md) | Targets, pools, resource classes and bindings |
+| [Data format](reference/data.md) | Extended XYZ labels, units, elements and array shapes |
+| [Sampling types](reference/sampling.md) | Mode-specific configuration, inputs and observations |
 
-Both examples are control-flow demonstrations. For scientific work supply
-real labels, models, recipes and matching native installations.
+## Development and contributing
+
+| Page | Contents |
+| --- | --- |
+| [Contributing](development/contributing.md) | Development, package responsibilities, tests and documentation |
+
+See the project [README](../README.md). Report reproducible issues through [GitHub Issues](https://github.com/NanaKk0/DICE/issues), including relevant configuration, stage and log excerpts.

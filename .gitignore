@@ -2,8 +2,13 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 *.egg-info/
-.venv/
 build/
 dist/
+.venv/
 _site/
-demo-run/
+*.orig
+examples/dpa4_dpa4c/iter*/
+examples/dpa4_dpa4c/.dice_state/
+examples/dpa4_dpa4c/environment.local.json
+examples/dpa4_dpa4c/models/*.pt
+examples/dpa4_dpa4c/models/*.pt2

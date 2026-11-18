@@ -1,0 +1,9 @@
+units metal
+boundary p p p
+atom_style atomic
+timestep 0.001
+neighbor 2.0 bin
+neigh_modify every 1 delay 0 check yes
+velocity all create 1773 917 mom yes rot no dist gaussian
+fix thermostat all nvt temp 1773 1773 0.1
+run 100000

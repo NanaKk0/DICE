@@ -42,9 +42,11 @@ class SamplingRecipeSource:
     path: Path
     ensemble: str | None = None
     condition_group_id: str | None = None
+    inputs: Mapping[str, Path] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "path", Path(self.path).resolve())
+        object.__setattr__(self, 'inputs', {name: Path(path).resolve() for name,path in self.inputs.items()})
         if self.ensemble is not None and not str(self.ensemble):
             raise ValueError("sampling recipe ensemble must be non-empty when present")
         if self.condition_group_id is not None and not str(self.condition_group_id):
@@ -402,6 +404,11 @@ class BoundSamplingHandleSession:
         if not isinstance(request, SamplingExecutionIntent):
             raise TypeError("bound sampling execution requires its canonical intent")
         evidence = self._take_resolved(request.evidence, expected_kind="prepare")
+        if evidence.seed_selections:
+            from workflow_backends.common.seed_selection import publish_seed_selection_manifest
+            publish_seed_selection_manifest(evidence.sample_dir / 'seed_selection.json',
+                iter_index=evidence.iter_index, round_index=evidence.round_index,
+                selections=evidence.seed_selections)
         return self.native_ops.execute(
             replace(self.physical_execution, evidence=evidence)
         )

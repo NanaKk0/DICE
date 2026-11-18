@@ -1,0 +1,11 @@
+units metal
+atom_style atomic
+boundary p p p
+timestep 0.00025
+velocity all create 300 91731 mom yes rot no dist gaussian
+neighbor 2.0 bin
+neigh_modify delay 0 every 1 check yes
+fix bath all nvt temp 300 300 0.1
+thermo 10
+thermo_style custom step temp pe ke etotal press
+run 200

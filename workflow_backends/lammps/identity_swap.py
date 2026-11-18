@@ -18,17 +18,15 @@ from ase.io import read
 
 from workflow_core.common.md_mc import IdentitySwapParameters
 from workflow_core.structures.canonical_identity import structure_id_for_atoms
+from workflow_backends.lammps.protocol import assemble_lammps_protocol
 
 
-def digest(path):
+def digest(path, *, cache=None):
+    from workflow_backends.lammps.observation_source import _file_digest
     path = Path(path)
     if path.is_symlink() or not path.is_file():
         raise ValueError(f'MDMC requires a regular file: {path.name}')
-    h = hashlib.sha256()
-    with path.open('rb') as stream:
-        for chunk in iter(lambda: stream.read(1024*1024), b''):
-            h.update(chunk)
-    return h.hexdigest()
+    return _file_digest(path, cache=cache)
 
 
 def mc_seed(*, iter_index, round_index, native_seed):
@@ -39,12 +37,15 @@ def mc_seed(*, iter_index, round_index, native_seed):
 
 def validate_recipe(text, *, ensemble=None):
     """Closed managed input; arbitrary LAMMPS control flow is not accepted."""
+    from workflow_backends.lammps.program_protocol import prepare_sampling_protocol
+    text = assemble_lammps_protocol(prepare_sampling_protocol(text,'md_mc'))
     if len(re.findall(r'(?m)^\s*# DICE_CAPABILITY: md_mc\s*$', text)) != 1:
         raise ValueError('md_mc recipe requires # DICE_CAPABILITY: md_mc')
     lines = [line.split('#', 1)[0].strip() for line in text.splitlines()]
     lines = [line for line in lines if line]
     allowed = {'units', 'boundary', 'atom_style', 'variable', 'include', 'timestep',
-               'neighbor', 'neigh_modify', 'velocity', 'fix', 'thermo', 'thermo_style'}
+               'neighbor', 'neigh_modify', 'velocity', 'fix', 'thermo', 'thermo_style',
+               'dump','dump_modify','group','compute','fix_modify'}
     if any(line.split()[0] not in allowed or '&' in line or ';' in line for line in lines):
         raise ValueError('md_mc recipe contains unmanaged native commands')
     includes = [line for line in lines if line.startswith('include ')]
@@ -65,7 +66,7 @@ def validate_recipe(text, *, ensemble=None):
         definitions = [line for line in lines if line.split()[0] == command.split()[0]]
         if definitions != [command] or lines.index(command) > lines.index(includes[0]):
             raise ValueError(f'md_mc recipe requires {command}')
-    variables = [line for line in lines if line.startswith('variable ')]
+    variables = [line for line in lines if line.startswith('variable dice_trajectory_every_steps ')]
     if len(variables) != 1 or not re.fullmatch(r'variable dice_trajectory_every_steps equal [1-9]\d*', variables[0]):
         raise ValueError('md_mc recipe requires one positive literal trajectory cadence')
     if lines.index(variables[0]) > lines.index(includes[0]):
@@ -77,7 +78,7 @@ def validate_recipe(text, *, ensemble=None):
     if not math.isfinite(dt) or dt <= 0:
         raise ValueError('md_mc timestep must be positive and finite')
     velocities = [line for line in lines if line.startswith('velocity ')]
-    if len(velocities) != 1 or not re.fullmatch(r'velocity all create \$\{dice_temperature\} \$\{dice_seed\}(?: mom (?:yes|no))?(?: rot (?:yes|no))?(?: dist (?:gaussian|uniform))?', velocities[0]):
+    if len(velocities) != 1 or not re.fullmatch(r'velocity all create \S+ \S+(?:\s+\S+\s+\S+)*', velocities[0]):
         raise ValueError('md_mc recipe requires exactly one managed-seed velocity initialization')
     if not (lines.index(includes[0]) < lines.index(timesteps[0]) < lines.index(velocities[0]) < lines.index(fixes[0])):
         raise ValueError('md_mc recipe initialization order is invalid')
@@ -100,10 +101,11 @@ def render(parameters, *, steps, cadence, temperature, type_map, mc_seed):
     return '\n'.join(lines)+'\n'
 
 
-def native_blocks(path, *, expected_atom_count=None):
+def native_blocks(path, *, expected_atom_count=None, frame_offsets=None):
     """Yield complete dump frames in bounded memory; never skip a malformed gap."""
     with Path(path).open() as stream:
         while True:
+            start = stream.tell() if frame_offsets is not None else None
             first = stream.readline()
             if not first:
                 return
@@ -120,6 +122,8 @@ def native_blocks(path, *, expected_atom_count=None):
             rows = [stream.readline() for _ in range(count)]
             if any(not row for row in rows):
                 raise ValueError('truncated MDMC dump frame')
+            if frame_offsets is not None:
+                frame_offsets.append((start, stream.tell()))
             yield ''.join(header+rows)
 
 
@@ -242,6 +246,8 @@ def finalize(root, *, failure=None, evaluator=None):
     files = {name: digest(root/name) for name in (
         'md_mc_frames.lammpstrj', 'seed.xyz', 'conf.lmp', 'input.lammps',
         'dice_task_setup.lammps', 'dice_md_mc.lammps')}
+    if (root/'protocol.lammps').exists():
+        files['protocol.lammps'] = digest(root/'protocol.lammps')
     if len(context.ordered_models) > 1:
         files['md_mc_members.jsonl'] = digest(root/'md_mc_members.jsonl')
     result = {'schema': 'dice.sample.md-mc-result', 'revision': 1, 'task_id': context.task_id,
@@ -261,28 +267,35 @@ def finalize(root, *, failure=None, evaluator=None):
     return result
 
 
-def validate_result(root):
+def validate_result(root, *, frame_offsets=None, digest_cache=None):
     """Consumer validation is bounded, read-only and never evaluates a model."""
     from workflow_backends.sample_artifacts import load_task_context, MdMcSampleTaskContext
+    from functools import partial
+    file_digest = partial(digest, cache={} if digest_cache is None else digest_cache)
     root = Path(root)
     context = load_task_context(root/'task_context.json')
     if not isinstance(context, MdMcSampleTaskContext):
         raise ValueError('MDMC result requires MDMC context')
-    digest(root/'md_mc_result.json')
+    file_digest(root/'md_mc_result.json')
     result = json.loads((root/'md_mc_result.json').read_text())
     if (result.get('schema') != 'dice.sample.md-mc-result' or result.get('revision') != 1
         or result.get('task_id') != context.task_id or result.get('status') not in {'completed', 'failed'}
-        or result.get('context_sha256') != digest(root/'task_context.json')):
+        or result.get('context_sha256') != file_digest(root/'task_context.json')):
         raise ValueError('invalid MDMC result identity')
     expected_files = {'md_mc_frames.lammpstrj', 'seed.xyz', 'conf.lmp', 'input.lammps',
                       'dice_task_setup.lammps', 'dice_md_mc.lammps'} | ({'md_mc_members.jsonl'} if len(context.ordered_models) > 1 else set())
-    if set(result['files']) != expected_files or any(digest(root/name) != d for name, d in result['files'].items()):
+    if (root/'protocol.lammps').exists():
+        expected_files.add('protocol.lammps')
+    if set(result['files']) != expected_files or any(file_digest(root/name) != d for name, d in result['files'].items()):
         raise ValueError('MDMC canonical evidence is damaged')
     if (context.rendered_input_sha256 != result['files']['input.lammps']
         or context.setup_sha256 != result['files']['dice_task_setup.lammps']
-        or context.recipe_sha256 != result['files']['input.lammps']):
+        or context.recipe_sha256 != result['files'].get('protocol.lammps', result['files']['input.lammps'])):
         raise ValueError('MDMC context/input bindings disagree')
     recipe = (root/'input.lammps').read_text()
+    from workflow_backends.lammps.program_protocol import prepare_sampling_protocol
+    if (root/'protocol.lammps').exists() and assemble_lammps_protocol(prepare_sampling_protocol((root/'protocol.lammps').read_text(),'md_mc')) != recipe:
+        raise ValueError('MDMC assembled protocol disagrees with input')
     protocol = validate_recipe(recipe, ensemble=context.ensemble)
     setup_lines = [line.split('#', 1)[0].strip() for line in (root/'dice_task_setup.lammps').read_text().splitlines()]
     pair = 'deepmd/kk' if context.md_mc['execution_mode'] == 'kokkos' else 'deepmd'
@@ -304,7 +317,7 @@ def validate_result(root):
         or not np.all(seed.pbc) or seed.info.get('structure_id') != context.selected_structure_id):
         raise ValueError('MDMC recipe or seed disagrees with context')
     for name, d in zip(context.ordered_models, context.model_digests, strict=True):
-        if Path(name).name != name or digest(root/name) != d:
+        if Path(name).name != name or file_digest(root/name) != d:
             raise ValueError('MDMC ordered model identity is damaged')
     parameters = IdentitySwapParameters(**context.md_mc['parameters'])
     if (type(result.get('planned_steps')) is not int or result['planned_steps'] != context.steps
@@ -335,7 +348,7 @@ def validate_result(root):
     previous_accepts = 0
     try:
         seen = 0
-        for seen, block in enumerate(native_blocks(root/'md_mc_frames.lammpstrj', expected_atom_count=len(context.md_mc['seed_numbers'])), 1):
+        for seen, block in enumerate(native_blocks(root/'md_mc_frames.lammpstrj', expected_atom_count=len(context.md_mc['seed_numbers']), frame_offsets=frame_offsets), 1):
             if seen > len(rows):
                 raise ValueError('MDMC has unlisted formal frames')
             row = rows[seen-1]
@@ -372,10 +385,15 @@ def validate_result(root):
 def committed_frames(root):
     context, result = validate_result(root)
     for row, block in zip(result['observations'], native_blocks(Path(root)/'md_mc_frames.lammpstrj', expected_atom_count=len(context.md_mc['seed_numbers'])), strict=True):
-        frame = frame_from_block(block, context)
-        frame.info.update(mc_attempts=row['attempts'], mc_accepts=row['accepts'], sampling_task_status=result['status'],
-                          md_time_fs=row['step']*context.native_timestep*1000, phase='md_mc',
-                          ensemble=context.ensemble, temperature_k=context.temperature_k)
-        if context.pressure_bar is not None:
-            frame.info['pressure_bar'] = context.pressure_bar
-        yield frame
+        yield committed_frame(block, context, result, row)
+
+
+def committed_frame(block, context, result, row):
+    """Decode one validated formal state with its MC and physical-time metadata."""
+    frame = frame_from_block(block, context)
+    frame.info.update(mc_attempts=row['attempts'], mc_accepts=row['accepts'], sampling_task_status=result['status'],
+                      md_time_fs=row['step']*context.native_timestep*1000, phase='md_mc',
+                      ensemble=context.ensemble, temperature_k=context.temperature_k)
+    if context.pressure_bar is not None:
+        frame.info['pressure_bar'] = context.pressure_bar
+    return frame

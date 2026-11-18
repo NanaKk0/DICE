@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from workflow_backends.lammps.control import render_lammps_control
+from workflow_backends.lammps.protocol import assemble_lammps_protocol
+
 from collections.abc import Iterator, Sequence
 from dataclasses import asdict
+from io import StringIO
 import hashlib
 import json
 import math
@@ -9,7 +13,9 @@ from pathlib import Path
 import re
 
 from ase import Atoms
-from ase.io import iread
+from ase.io import iread, read
+from workflow_backends.common.frame_index import FrameByteIndex, file_snapshot
+from workflow_backends.common.file_integrity import file_digest as _file_digest
 
 from workflow_backends.observation_source import (
     ObservationLocator,
@@ -18,6 +24,7 @@ from workflow_backends.observation_source import (
 )
 from workflow_backends.sample_artifacts import (
     CellProgramSampleTaskContext,
+    ControlledSampleTaskContext,
     ExplicitSampleTaskContext,
     SampleTaskContext,
     canonical_selected_seed,
@@ -76,6 +83,8 @@ class LammpsObservationSource:
         self.plan = plan
         self.accepted_kinds = accepted_kinds
         self._catalog: tuple[ObservationRecord, ...] | None = None
+        self._frame_indices: dict[int, FrameByteIndex] = {}
+        self._md_mc_results: dict[int, tuple[object, dict]] = {}
 
     @property
     def failed_task_count(self):
@@ -95,6 +104,7 @@ class LammpsObservationSource:
         if self._catalog is not None:
             return self._catalog
         records: list[ObservationRecord] = []
+        digest_cache = {}
         task_dirs = _ordered_task_dirs(self.sample_dir)
         planned_tasks = (
             self.plan.tasks_for_round(self.round_index)
@@ -106,6 +116,8 @@ class LammpsObservationSource:
                 "LAMMPS explicit sample task inventory disagrees with the resolved plan; rebuild rN/sample"
             )
         for task_index, task_dir in enumerate(task_dirs):
+            if planned_tasks is not None and planned_tasks[task_index].protocol_request is not None:
+                continue
             if (
                 planned_tasks is not None
                 and self.accepted_kinds is not None
@@ -140,6 +152,7 @@ class LammpsObservationSource:
                     or context.steps != condition.steps
                     or context.recipe_binding != condition.recipe_binding
                     or context.temperature_program != expected_program
+                    or getattr(context, 'lammps_control', {}).get('options') != (condition.lammps.to_payload() if condition.lammps else None)
                 ):
                     raise ValueError(
                         "LAMMPS explicit task provenance disagrees with the resolved plan; rebuild rN/sample"
@@ -147,7 +160,13 @@ class LammpsObservationSource:
             failure_path = task_dir / "sampling_failure.json"
             if getattr(context, 'kind', None) == 'md_mc':
                 from workflow_backends.lammps.identity_swap import validate_result
-                _ctx, result = validate_result(task_dir)
+                trajectory_path = task_dir/'md_mc_frames.lammpstrj'
+                snapshot, offsets = file_snapshot(trajectory_path), []
+                _ctx, result = validate_result(task_dir, frame_offsets=offsets, digest_cache=digest_cache)
+                if file_snapshot(trajectory_path) != snapshot:
+                    raise ValueError('MDMC observation changed during catalog validation')
+                self._frame_indices[task_index] = FrameByteIndex(trajectory_path, snapshot, tuple(offsets))
+                self._md_mc_results[task_index] = (_ctx, result)
                 if planned_tasks is not None and context.md_mc['parameters'] != json.loads(json.dumps(asdict(condition.md_mc))):
                     raise ValueError('MDMC parameters disagree with resolved task')
                 for frame_index, row in enumerate(result['observations']):
@@ -175,10 +194,14 @@ class LammpsObservationSource:
                 if terminals is None:
                     continue
                 trajectory_path = _committed_trajectory_path(task_dir)
-                trajectory_rows = _scan_lammpstrj(trajectory_path)
+                offsets = []
+                snapshot = file_snapshot(trajectory_path)
+                trajectory_rows = _scan_lammpstrj(trajectory_path, frame_offsets=offsets)
             else:
                 trajectory_path = _committed_trajectory_path(task_dir)
-                trajectory_rows = _scan_lammpstrj(trajectory_path)
+                offsets = []
+                snapshot = file_snapshot(trajectory_path)
+                trajectory_rows = _scan_lammpstrj(trajectory_path, frame_offsets=offsets)
                 terminals = _validate_lammps_task_terminal_rows(
                     root=task_dir,
                     cadence=context.cadence,
@@ -187,6 +210,9 @@ class LammpsObservationSource:
                     require_exact_cadence=explicit_context,
                     trajectory_rows=trajectory_rows,
                 )
+            if file_snapshot(trajectory_path) != snapshot:
+                raise ValueError('native observation changed during catalog validation')
+            self._frame_indices[task_index] = FrameByteIndex(trajectory_path, snapshot, tuple(offsets))
             if isinstance(context, CellProgramSampleTaskContext):
                 if failure_path.exists() or failure_path.is_symlink():
                     raise ValueError(
@@ -251,6 +277,7 @@ class LammpsObservationSource:
         if not records:
             raise ValueError("LAMMPS native source has no positive-step observations; rebuild rN/sample")
         self._catalog = tuple(records)
+        self._records_by_id = {record.structure_id: record for record in records}
         return self._catalog
 
     def replay(
@@ -265,125 +292,53 @@ class LammpsObservationSource:
         identities = tuple(str(item) for item in ordered_identities)
         if any(not item for item in identities) or len(set(identities)) != len(identities):
             raise ValueError("LAMMPS replay identities must be unique and non-empty")
-        by_id = {record.structure_id: record for record in self.catalog()}
+        self.catalog()
+        by_id = self._records_by_id
         missing = [identity for identity in identities if identity not in by_id]
         if missing:
             raise ValueError(f"LAMMPS replay identity is absent from the catalog: {missing[0]}")
+        yield from self._indexed_replay(identities, by_id=by_id, chunk_size=size)
+        return
+    def _indexed_replay(self, identities, *, by_id, chunk_size):
         tasks = _ordered_task_dirs(self.sample_dir)
-        catalog_order = {record.structure_id: index for index, record in enumerate(self.catalog())}
-        requested_positions = tuple(catalog_order[identity] for identity in identities)
-        if all(left < right for left, right in zip(requested_positions, requested_positions[1:])):
-            yield from self._replay_ordered_subset(identities, by_id=by_id, tasks=tasks, chunk_size=size)
-            return
-        for start in range(0, len(identities), size):
-            chunk_ids = identities[start : start + size]
-            requested = [by_id[identity] for identity in chunk_ids]
-            loaded: dict[str, Atoms] = {}
-            for task_index in sorted({record.task_index for record in requested}):
-                task_records = [record for record in requested if record.task_index == task_index]
-                if (tasks[task_index]/'md_mc_result.json').is_file():
-                    from workflow_backends.lammps.identity_swap import committed_frames
-                    wanted = {record.md_step for record in task_records}
-                    frames = {f.info['md_step']: f for f in committed_frames(tasks[task_index]) if f.info['md_step'] in wanted}
+        for start in range(0, len(identities), chunk_size):
+            wanted = identities[start:start + chunk_size]
+            loaded = {}
+            grouped = {}
+            for identity in wanted:
+                record = by_id[identity]
+                grouped.setdefault(record.task_index, []).append(record)
+            for task_index, records in grouped.items():
+                if task_index in self._frame_indices:
+                    index = self._frame_indices[task_index]
+                    if task_index in self._md_mc_results:
+                        from workflow_backends.lammps.identity_swap import committed_frame
+                        context, result = self._md_mc_results[task_index]
+                        native = (committed_frame(raw.decode('utf-8'), context, result,
+                                      result['observations'][record.frame_index])
+                                  for record, raw in zip(records,
+                                      index.read(record.frame_index for record in records), strict=True))
+                    else:
+                        native = (read(StringIO(raw.decode('utf-8')), format='lammps-dump-text',
+                                       specorder=list(self.type_map))
+                                  for raw in index.read(record.frame_index for record in records))
                 else:
-                    frames = extract_lammpstrj_selected_frames(
-                    _committed_trajectory_path(tasks[task_index]),
-                    type_map=list(self.type_map),
-                    target_steps={record.md_step for record in task_records},
-                    include_forces=False,
-                )
-                for record in task_records:
-                    try:
-                        atoms = frames[record.md_step]
-                    except KeyError as exc:
-                        raise ValueError(
-                            f"LAMMPS replay frame is missing at task {task_index} step {record.md_step}; rebuild rN/sample"
-                        ) from exc
-                    atoms.info.update(
-                        system_id=record.system_id,
-                        structure_id=record.structure_id,
-                        structure_source="workflow",
-                        md_step=record.md_step,
-                        **({
-                            "student_uncertainty": record.student_uncertainty,
-                            "force_uncertainty": record.student_uncertainty,
-                            "force_std_max": record.student_uncertainty,
-                        } if record.student_uncertainty is not None else {}),
-                        **(
-                            {
-                                "sampling_role_id": record.sampling_role_id,
-                                "selection_group_id": record.selection_group_id,
-                                "condition_group_id": record.condition_group_id,
-                            }
-                            if record.sampling_role_id is not None
-                            else {}
-                        ),
-                    )
+                    from workflow_backends.lammps.identity_swap import committed_frames
+                    steps = {record.md_step for record in records}
+                    frames = {f.info['md_step']: f for f in committed_frames(tasks[task_index])
+                              if f.info['md_step'] in steps}
+                    native = (frames[record.md_step] for record in records)
+                for record, atoms in zip(records, native, strict=True):
+                    atoms.info.update(system_id=record.system_id, structure_id=record.structure_id,
+                        structure_source='workflow', md_step=record.md_step)
+                    if record.student_uncertainty is not None:
+                        atoms.info.update(student_uncertainty=record.student_uncertainty,
+                            force_uncertainty=record.student_uncertainty, force_std_max=record.student_uncertainty)
+                    if record.sampling_role_id is not None:
+                        atoms.info.update(sampling_role_id=record.sampling_role_id,
+                            selection_group_id=record.selection_group_id, condition_group_id=record.condition_group_id)
                     loaded[record.structure_id] = atoms
-            yield tuple(loaded[identity] for identity in chunk_ids)
-
-    def _replay_ordered_subset(
-        self,
-        identities: tuple[str, ...],
-        *,
-        by_id: dict[str, ObservationRecord],
-        tasks: tuple[Path, ...],
-        chunk_size: int,
-    ) -> Iterator[tuple[Atoms, ...]]:
-        records = [by_id[identity] for identity in identities]
-        output: list[Atoms] = []
-        produced: list[str] = []
-        for task_index in sorted({record.task_index for record in records}):
-            task_records = [record for record in records if record.task_index == task_index]
-            wanted = {record.md_step: record for record in task_records}
-            seen: set[int] = set()
-            if (tasks[task_index]/'md_mc_result.json').is_file():
-                from workflow_backends.lammps.identity_swap import committed_frames
-                native_frames = committed_frames(tasks[task_index])
-            else:
-                native_frames = iread(
-                _committed_trajectory_path(tasks[task_index]),
-                index=":",
-                format="lammps-dump-text",
-                specorder=list(self.type_map),
-                )
-            for atoms in native_frames:
-                step = int(atoms.info.get("timestep", -1))
-                record = wanted.get(step)
-                if record is None:
-                    continue
-                atoms.info.update(
-                    system_id=record.system_id,
-                    structure_id=record.structure_id,
-                    structure_source="workflow",
-                    md_step=record.md_step,
-                    **({
-                        "student_uncertainty": record.student_uncertainty,
-                        "force_uncertainty": record.student_uncertainty,
-                        "force_std_max": record.student_uncertainty,
-                    } if record.student_uncertainty is not None else {}),
-                    **(
-                        {
-                            "sampling_role_id": record.sampling_role_id,
-                            "selection_group_id": record.selection_group_id,
-                            "condition_group_id": record.condition_group_id,
-                        }
-                        if record.sampling_role_id is not None
-                        else {}
-                    ),
-                )
-                output.append(atoms)
-                produced.append(record.structure_id)
-                seen.add(step)
-                if len(output) == chunk_size:
-                    yield tuple(output)
-                    output = []
-            if seen != set(wanted):
-                raise ValueError(f"LAMMPS ordered replay is missing task {task_index} frames; rebuild rN/sample")
-        if output:
-            yield tuple(output)
-        if tuple(produced) != identities:
-            raise ValueError("LAMMPS ordered replay identities do not match requested order")
+            yield tuple(loaded[identity] for identity in wanted)
 
 
 def _ordered_task_dirs(sample_dir: Path) -> tuple[Path, ...]:
@@ -417,6 +372,7 @@ def _scan_lammpstrj(
     expected_atom_count: int | None = None,
     expected_type_count: int | None = None,
     validate_frame_geometry: bool = False,
+    frame_offsets: list[tuple[int, int]] | None = None,
 ) -> tuple[tuple[int, int], ...]:
     if not path.is_file() or path.stat().st_size <= 0:
         raise ValueError("LAMMPS native source is missing traj.lammpstrj; rebuild rN/sample")
@@ -425,6 +381,7 @@ def _scan_lammpstrj(
     box_flags: tuple[bool, bool, bool] | None = None
     with path.open("r", encoding="utf-8", errors="ignore") as handle:
         while True:
+            frame_start = handle.tell() if frame_offsets is not None else None
             line = handle.readline()
             if not line:
                 break
@@ -513,6 +470,8 @@ def _scan_lammpstrj(
             except (TypeError, ValueError) as exc:
                 raise ValueError("malformed LAMMPS trajectory; rebuild rN/sample") from exc
             frames.append((len(frames), step))
+            if frame_offsets is not None:
+                frame_offsets.append((frame_start, handle.tell()))
     return tuple(frames)
 
 
@@ -740,7 +699,7 @@ def validate_lammps_native_execution(
     terminals: dict[str, tuple[int, ...]],
     deepmd_recipe_kind: str | None,
     expected_environment_profile_id: object = _UNSPECIFIED_PROFILE,
-    digest_cache: dict[tuple[int, int, int, int], str] | None = None,
+    digest_cache: dict[tuple[int, ...], str] | None = None,
 ) -> None:
     """Attest the single ordinary-DeepMD command and its bound products."""
 
@@ -752,6 +711,20 @@ def validate_lammps_native_execution(
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError("LAMMPS native execution evidence is invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError('LAMMPS native receipt must be an object')
+    context_path = root / 'task_context.json'
+    if context_path.is_file():
+        bound_context = load_task_context(context_path)
+        if isinstance(bound_context, ControlledSampleTaskContext) and payload.get('schema_revision') != 3:
+            raise ValueError('controlled LAMMPS task requires revision-3 native receipt')
+    if isinstance(payload, dict) and payload.get('schema_revision') == 3:
+        context = load_task_context(root / 'task_context.json')
+        if not isinstance(context, ControlledSampleTaskContext) or payload.get('lammps_control') != context.lammps_control:
+            raise ValueError('LAMMPS native control receipt disagrees with task context')
+        payload = dict(payload)
+        del payload['lammps_control']
+        payload['schema_revision'] = 2 if payload.get('execution_mode') == 'kokkos' else 1
     ordinary_keys = {
         "schema",
         "schema_revision",
@@ -907,9 +880,12 @@ def validate_lammps_native_execution(
             or isinstance(payload["native_seed"], bool)
             or payload["native_seed"] <= 0
             or (
-                kind != "nvt_cell_program"
+                (kind != "nvt_cell_program" or (root / "protocol.lammps").exists())
                 and payload["recipe_sha256"]
-                != _file_digest(root / "input.lammps", cache=digest_cache)
+                != _file_digest(
+                    root / ("protocol.lammps" if (root / "protocol.lammps").exists() else "input.lammps"),
+                    cache=digest_cache,
+                )
             )
             or payload["rendered_input_sha256"]
             != _file_digest(root / "input.lammps", cache=digest_cache)
@@ -1091,9 +1067,12 @@ def validate_lammps_sample_block(
         if len(tasks) != len(conditions):
             return False
         model_paths = tuple(Path(model).resolve() for model in models)
-        model_digests = tuple(_file_digest(path) for path in model_paths)
+        digest_cache = {}
+        model_digests = tuple(_file_digest(path, cache=digest_cache) for path in model_paths)
         usable_observations = 0
         for task_index, condition in enumerate(conditions):
+                if getattr(condition, 'protocol_request', None) is not None:
+                    continue
                 if (
                     accepted_kinds is not None
                     and getattr(condition, "kind", None) not in accepted_kinds
@@ -1103,7 +1082,7 @@ def validate_lammps_sample_block(
                 seed = selected_by_system[system_id]
                 if getattr(condition, 'kind', None) == 'md_mc':
                     from workflow_backends.lammps.identity_swap import validate_result
-                    ctx, result = validate_result(tasks[task_index])
+                    ctx, result = validate_result(tasks[task_index], digest_cache=digest_cache)
                     if (ctx.task_id != condition.task_id or ctx.sampling_role_id != condition.sampling_role_id
                         or ctx.condition_group_id != condition.condition_group_id or ctx.selection_group_id != condition.selection_group_id
                         or ctx.temperature_k != condition.temperature_k or ctx.steps != condition.steps
@@ -1141,6 +1120,17 @@ def validate_lammps_sample_block(
                         system_id=system_id,
                     )
                 )
+                controlled = None
+                if explicit and condition.lammps is not None:
+                    controlled = render_lammps_control(recipe_text, condition.lammps.to_payload(),
+                        ensemble=condition.ensemble, temperature=temperature, pressure=condition.pressure_bar,
+                        steps=task_steps, seed=expected_seed)
+                    if (not isinstance(context, ControlledSampleTaskContext)
+                        or context.lammps_control != {'options': condition.lammps.to_payload(), 'settings': controlled.settings}
+                        or context.native_timestep != controlled.timestep):
+                        return False
+                elif isinstance(context, ControlledSampleTaskContext):
+                    return False
                 if explicit:
                     if not isinstance(context, ExplicitSampleTaskContext):
                         return False
@@ -1161,7 +1151,7 @@ def validate_lammps_sample_block(
                         )
                         or context.pressure_bar != condition.pressure_bar
                         or context.total_steps != task_steps
-                        or context.trajectory_every_steps != _recipe_cadence(recipe_text)
+                        or context.trajectory_every_steps != (controlled.cadence if controlled else _recipe_cadence(recipe_text))
                         or context.recipe_binding != condition.recipe_binding
                         or context.recipe_sha256 != hashlib.sha256(recipe_text.encode()).hexdigest()
                         or context.rendered_input_sha256 != _file_digest(task_dir / "input.lammps")
@@ -1249,10 +1239,17 @@ def validate_lammps_sample_block(
                 required = ("conf.lmp", "dice_task_setup.lammps", "input.lammps")
                 if any(not _nonempty(task_dir / name) for name in required):
                     return False
+                from workflow_backends.lammps.program_protocol import prepare_sampling_protocol
+                assembled = controlled.text if controlled else assemble_lammps_protocol(prepare_sampling_protocol(recipe_text,getattr(condition,'kind',None)))
+                if (controlled is not None or assembled != recipe_text) and (
+                    not _nonempty(task_dir / "protocol.lammps")
+                    or (task_dir / "protocol.lammps").read_text(encoding="utf-8") != recipe_text
+                ):
+                    return False
                 if (
                     getattr(condition, "kind", None) != "nvt_cell_program"
                     and (task_dir / "input.lammps").read_text(encoding="utf-8")
-                    != recipe_text
+                    != assembled
                 ):
                     return False
                 if not _setup_matches(
@@ -1271,7 +1268,7 @@ def validate_lammps_sample_block(
                     return False
                 if any(path.is_symlink() or not path.is_file() for path in presentations):
                     return False
-                if tuple(_file_digest(path) for path in presentations) != model_digests:
+                if tuple(_file_digest(path, cache=digest_cache) for path in presentations) != model_digests:
                     return False
                 if explicit and (
                     context.ordered_models != tuple(path.name for path in presentations)
@@ -1321,6 +1318,7 @@ def validate_lammps_sample_block(
                         expected_environment_profile_id=(
                             expected_environment_profile_id
                         ),
+                        digest_cache=digest_cache,
                     )
                     if explicit:
                         native_payload = json.loads(native_evidence.read_text(encoding="utf-8"))
@@ -1448,7 +1446,7 @@ def reconstruct_legacy_lammps_contexts(
             required = ("conf.lmp", "dice_task_setup.lammps", "input.lammps", "traj.lammpstrj")
             if any(not _nonempty(task_dir / name) for name in required):
                 raise ValueError("legacy LAMMPS task input/output is missing; rebuild from rN/sample")
-            if (task_dir / "input.lammps").read_text(encoding="utf-8") != recipe_text:
+            if (task_dir / "input.lammps").read_text(encoding="utf-8") != assemble_lammps_protocol(recipe_text):
                 raise ValueError("legacy LAMMPS rendered recipe mismatch; rebuild from rN/sample")
             if not _setup_matches(
                 task_dir / "dice_task_setup.lammps",
@@ -1693,25 +1691,6 @@ def _nonempty(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 0
 
 
-def _file_digest(
-    path: Path,
-    *,
-    cache: dict[tuple[int, int, int, int], str] | None = None,
-) -> str:
-    if cache is not None:
-        stat = path.stat()
-        key = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
-        cached = cache.get(key)
-        if cached is not None:
-            return cached
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    result = digest.hexdigest()
-    if cache is not None:
-        cache[key] = result
-    return result
 
 
 __all__ = [

@@ -114,6 +114,11 @@ class ExplicitSampleTaskContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ControlledSampleTaskContext(ExplicitSampleTaskContext):
+    lammps_control: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class CellProgramSampleTaskContext(ExplicitSampleTaskContext):
     resolved_cell_history: dict[str, object] = field(default_factory=dict)
     cell_history_sha256: str = ""
@@ -210,6 +215,29 @@ def load_task_context(path: str | Path) -> SampleTaskContext | ExplicitSampleTas
         payload = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"malformed lifecycle sample task context: {target}") from exc
+    return _decode_task_context(payload, target)
+
+
+def _decode_task_context(payload, target):
+    if isinstance(payload, dict) and payload.get('schema_revision') == 5:
+        expected = set(ControlledSampleTaskContext.__dataclass_fields__)
+        if set(payload) != expected or payload.get('kind') not in {'nvt', 'npt'}:
+            raise ValueError('invalid controlled LAMMPS task context fields')
+        control = payload['lammps_control']
+        if not isinstance(control, dict) or set(control) != {'options', 'settings'}:
+            raise ValueError('invalid LAMMPS control context')
+        from workflow_core.common.lammps_control import LammpsSamplingOptions
+        LammpsSamplingOptions.from_payload(control['options'])
+        if not isinstance(control['settings'], dict) or not control['settings']:
+            raise ValueError('invalid LAMMPS settings context')
+        for record in control['settings'].values():
+            if not isinstance(record, dict) or set(record) != {'value', 'source'} or not isinstance(record['source'], str):
+                raise ValueError('invalid LAMMPS parameter source')
+        base = dict(payload)
+        del base['lammps_control']
+        base['schema_revision'] = 2
+        decoded = _decode_task_context(base, target)
+        return ControlledSampleTaskContext(**{**asdict(decoded), 'schema_revision': 5}, lammps_control=control)
     if isinstance(payload, dict) and payload.get('schema_revision') == 4:
         from workflow_core.common.md_mc import IdentitySwapParameters
         expected = set(MdMcSampleTaskContext.__dataclass_fields__)

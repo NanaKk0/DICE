@@ -1,0 +1,12 @@
+# DICE_CAPABILITY: md_mc
+units metal
+boundary p p p
+atom_style atomic
+variable dice_trajectory_every_steps equal 100
+include dice_task_setup.lammps
+timestep 0.001
+neighbor 2.0 bin
+neigh_modify every 1 delay 0 check yes
+velocity all create ${dice_temperature} ${dice_seed} mom yes rot no dist gaussian
+fix thermostat all nvt temp ${dice_temperature} ${dice_temperature} 0.1
+include dice_md_mc.lammps

@@ -541,6 +541,10 @@ def _validate_suffix_external_inputs(
                         task.gcmc,
                         task.widom,
                         task.md_mc,
+                        task.neb,
+                        task.relax,
+                        task.protocol_request,
+                        task.lammps,
                         task.cycles,
                         guest_digests.get(task.condition_group_id),
                     )

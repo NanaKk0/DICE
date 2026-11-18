@@ -16,7 +16,7 @@ def test_installed_public_cli_help():
 
 
 def test_cpu_mock_lifecycle_and_exact_suffix_recovery(tmp_path):
-    script = ROOT / "examples/cpu_mock/run.py"
+    script = ROOT / "tests/fixtures/cpu_mock/run.py"
     run_root = tmp_path / "demo"
     for extra in ([], ["--reuse"], ["--resume", "r1/sample"]):
         subprocess.run([sys.executable, str(script), str(run_root), *extra], check=True)
@@ -29,7 +29,7 @@ def test_cpu_mock_lifecycle_and_exact_suffix_recovery(tmp_path):
 def test_documentation_build_has_local_output(tmp_path):
     subprocess.run([sys.executable, str(ROOT / "tools/build_docs.py"), "--output", str(tmp_path / "site")], check=True)
     assert (tmp_path / "site/index.html").is_file()
-    assert (tmp_path / "site/docs/recovery.html").is_file()
+    assert (tmp_path / "site/docs/guides/results-and-recovery.html").is_file()
 
 
 def test_profile_templates_use_official_loaders():

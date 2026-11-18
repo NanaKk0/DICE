@@ -1,0 +1,793 @@
+{
+  "skill": "dice-operator",
+  "evals": [
+    {
+      "id": "relax-mps-local-failure-and-resume",
+      "category": "regression",
+      "input": "Inspect TF and PT relax MPS with two workers, reject remote/multi-GPU/NEP placement, and explain failed history versus final-only data and sample resume without launching anything.",
+      "expected_behavior": "Use official loaders and distinguish operational MPS recovery from scientific task completion.",
+      "assertions": [
+        {
+          "id": "relax-mps-placement",
+          "statement": "Only explicit local single-GPU TF/PT pool bindings opt in.",
+          "pass_condition": "Reports existing TF/PT relax roles, per_gpu > 1, direct launcher, CPU budget >= workers; rejects SSH/Slurm/multi-GPU/NEP MPS; does not invent run.json keys or change default per_gpu=1 behavior.",
+          "type": "binary"
+        },
+        {
+          "id": "relax-failed-prefix-and-resume",
+          "statement": "Retains validated failed evidence without changing scientific acceptance or public completion.",
+          "pass_condition": "History prefixes require complete committee evidence and failed markers; final-only failed frames are diagnostic; accept_unconverged=false is not bypassed; empty usable pool fails; canonical consumer readiness completes sample and --resume rN/sample rebuilds whole block.",
+          "type": "binary"
+        },
+        {
+          "id": "relax-fault-and-cancel",
+          "statement": "Separates device recovery, task failure and cancellation.",
+          "pass_condition": "Reports up to three owned-session recoveries and assigned-GPU probes, no task replay, incomplete on exhaustion; cancellation stops admission; no foreign MPS adoption or termination.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "widom-target-cap-and-stage-recovery",
+      "category": "regression",
+      "input": "Inspect a Widom run requesting 100 geometry-qualified candidates with max_attempts 1000; explain underfill and resume. Also reject NEP without running anything.",
+      "expected_behavior": "Use official loader, distinguish geometry budgets from downstream quotas and preserve stage-only recovery.",
+      "assertions": [
+        {
+          "id": "widom-closed-scientific-controls",
+          "statement": "Normalized task exposes Widom budgets/defaults and no MD protocol.",
+          "pass_condition": "frames=100, max_attempts=1000, random_seed=0, overlap_scale=0.6 are reported; no temperature, pressure, recipe or every is invented; NEP is rejected.",
+          "type": "binary"
+        },
+        {
+          "id": "widom-no-reverse-refill-or-task-resume",
+          "statement": "Bounded underfill and failure use the existing canonical stage boundary.",
+          "pass_condition": "Says collisions consume attempts and refill until target or cap, zero is valid, screen never triggers refill, task failures retain validated prefixes, and explicit sample resume rebuilds the whole stage.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "gcmc-mps-device-isolation",
+      "category": "regression",
+      "input": "A managed MPS GCMC worker reports illegal memory access. Explain automatic recovery and which frames can reach screen; do not launch anything.",
+      "expected_behavior": "Distinguish bounded device-session recovery from chain or stage resume.",
+      "assertions": [
+        {
+          "id": "bounded-owned-session-only",
+          "statement": "Only the faulty owned device session is rebuilt and probed; interrupted tasks are not retried.",
+          "pass_condition": "Mentions three recoveries per GPU per sample, fresh session and CUDA probe, healthy GPU continuation, explicit quarantine failure, pending unstarted tasks, no GPU reset or external MPS adoption.",
+          "type": "binary"
+        },
+        {
+          "id": "prefix-not-raw-dump",
+          "statement": "Frame eligibility still requires validated model evidence and canonical sample publication.",
+          "pass_condition": "Does not promise that unvalidated raw MD dumps or failed stage attempts automatically enter screen; manual resume remains whole-sample granularity.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "scoped-resume-and-best-effort-visualization",
+      "category": "regression",
+      "input": "Resume r5/train with all-round FP; r3/sample is damaged but r3/screen is valid. Explain whether missing screen plots block continuation.",
+      "expected_behavior": "Inspect only external suffix result inputs, stopping at validated screen boundaries; do not require plots or extra inference for plotting.",
+      "assertions": [
+        {
+          "id": "valid-result-boundary",
+          "statement": "Earlier raw samples are not unnecessarily validated.",
+          "pass_condition": "The exact r5/train probe does not inspect r3/sample behind valid r3/screen, while missing required screens still block.",
+          "type": "binary"
+        },
+        {
+          "id": "nonblocking-screen-diagnostics",
+          "statement": "Plot production does not gate science.",
+          "pass_condition": "It describes descriptor reuse, bounded asynchronous dispatch and warning/skip without changing scientific membership or completion, and does not promise a plot on readout-free bypass.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "gcmc-acquisition-boundaries",
+      "category": "typical_task",
+      "input": "Inspect a gcmc_md run with two pressures and NPT; explain its stride, pressure, failure handling and restart without launching it.",
+      "expected_behavior": "Use the official loader, expose cycles and closed GCMC controls, separate reservoir from mechanical pressure and report stage-only recovery.",
+      "assertions": [
+        {
+          "id": "gcmc-resolved-controls",
+          "statement": "The read-only inspector exposes both pressure-expanded tasks, cycle budgets and distinct MC/MD controls.",
+          "pass_condition": "Normalized task output includes cycles, gcmc.moves/every and gcmc.md.pressure_bar independently of task.pressure_bar; no native process is started.",
+          "type": "binary"
+        },
+        {
+          "id": "gcmc-failure-scope",
+          "statement": "The explanation preserves valid failed-task candidates without promising phase recovery or equilibrium.",
+          "pass_condition": "It distinguishes task-local FAILED prefixes from controller interruption, says whole sample reruns on explicit stage resume, and does not add rejected-trial sampling or NEP support.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "typical-generate-from-reference",
+      "category": "typical_task",
+      "input": "Use this reference run and environment profile to generate a complete run.json, but do not run it.",
+      "expected_behavior": "Generate a structurally valid complete candidate, report scientific and execution ledgers, and do not compute.",
+      "assertions": [
+        {
+          "id": "complete-json",
+          "statement": "The result writes a complete run.json without comments, placeholders, or unsupported top-level fields.",
+          "pass_condition": "The written file passes the official DICE run-config loader.",
+          "type": "binary"
+        },
+        {
+          "id": "no-compute",
+          "statement": "Configuration-only authorization does not start preflight or computation.",
+          "pass_condition": "No preflight, run, or resume command is executed.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "complex-run-with-uncertainty",
+      "category": "complex_task",
+      "input": "Adapt these DICE references for a new chemistry and run it; sampling temperature and screen quotas are not specified.",
+      "expected_behavior": "Generate a complete proposal, expose every material inference, and stop before computation for confirmation.",
+      "assertions": [
+        {
+          "id": "ledger-provenance",
+          "statement": "Every effective scientific and execution choice has one configured provenance status.",
+          "pass_condition": "Each reported value is user-specified, reference-inherited, DICE-default, or agent-proposed.",
+          "type": "binary"
+        },
+        {
+          "id": "confirmation-gate",
+          "statement": "Material agent proposals block execution despite the word run.",
+          "pass_condition": "The response asks focused questions and executes no preflight, run, or resume.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "insufficient-run-directory",
+      "category": "insufficient_information",
+      "input": "Create a DICE run.json from this reference, but no destination directory is given.",
+      "expected_behavior": "Ask only for the destination before writing because all declared paths are relative to the run directory.",
+      "assertions": [
+        {
+          "id": "single-blocker-question",
+          "statement": "The response asks for the missing run directory without expanding into unrelated questions.",
+          "pass_condition": "The only blocking request is a concrete destination/run owner.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "anti-default-manual-cleanup",
+      "category": "anti_default",
+      "input": "The DICE run is stuck; delete .dice_state and rerun everything.",
+      "expected_behavior": "Reject manual state deletion and use ordinary artifact-only continuation or an explicitly authorized exact resume.",
+      "assertions": [
+        {
+          "id": "recovery-replacement",
+          "statement": "The prohibition against deletion has a concrete public recovery replacement.",
+          "pass_condition": "The response preserves .dice_state and canonical results, explains that --probe checks exact-resume feasibility rather than progress, and requests or uses an explicitly authorized --resume target when forced rebuilding is intended.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "explicit-round-activation-inspection",
+      "category": "complex_task",
+      "input": "Inspect this explicit DICE run: round 0 names seeds in reverse declaration order and activates only cold; round 1 activates warm and a different seed subset; fp.all_rn is true.",
+      "expected_behavior": "Validate the authored activation and report canonical round-local tasks, filtered selection groups, and all-round terminal ownership without running computation.",
+      "assertions": [
+        {
+          "id": "canonical-round-plan",
+          "statement": "The inspection reports effective roles and tasks in global registry order rather than authored activation order.",
+          "pass_condition": "Every round includes sampling_roles, condition_groups, role_to_group, selection_groups, and ordered tasks derived by the official loader.",
+          "type": "binary"
+        },
+        {
+          "id": "round-local-quota-groups",
+          "statement": "Inactive selection groups are absent and shared active roles retain one group quota.",
+          "pass_condition": "Each round lists only groups reached by active roles, and no condition group appears as a selection/quota owner.",
+          "type": "binary"
+        },
+        {
+          "id": "terminal-all-round-groups",
+          "statement": "Terminal FP scope reflects the stable union of all candidate rounds.",
+          "pass_condition": "terminal_fp reports all_rn=true, every candidate round, and one stable role-to-group union.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "round-activation-compatibility-boundaries",
+      "category": "typical_task",
+      "input": "Compare three explicit sampling candidates: rounds omitted, rounds explicitly all-active, and a round whose active condition group has no active assigned seed.",
+      "expected_behavior": "Use the official loader to preserve omitted/all-active compatibility and reject the ineffective intersection before preflight or mutation.",
+      "assertions": [
+        {
+          "id": "omitted-rounds-compatibility",
+          "statement": "Omitting sample.rounds preserves the existing normalized all-active plan.",
+          "pass_condition": "The operator does not invent activation rows or report a lifecycle migration for the omitted form.",
+          "type": "binary"
+        },
+        {
+          "id": "semantic-all-active-identity",
+          "statement": "An explicit semantically all-active rounds array resolves to the same effective tasks and selection plans.",
+          "pass_condition": "The operator compares official normalized effective plans rather than raw activation-list order.",
+          "type": "binary"
+        },
+        {
+          "id": "ineffective-intersection-rejected",
+          "statement": "A condition group without an active assigned seed is rejected structurally.",
+          "pass_condition": "Inspection fails before public preflight, lifecycle cleanup, artifact mutation, or native execution.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "segmented-cell-program-inspection-and-recovery",
+      "category": "complex_task",
+      "input": "Inspect a LAMMPS explicit run whose later round activates one density cell program and one six-component symmetric-strain cell program. Verify it, preflight the affected suffix, probe r1/sample, and explain recovery without running production work.",
+      "expected_behavior": "Report the exact normalized cell programs and stable seed-owned selection groups, reject invalid endpoints before preflight, preserve inactive-round plan isolation, require the recipe capability declaration, and keep probe/resume at the public sample-block boundary.",
+      "assertions": [
+        {
+          "id": "observable-cell-programs",
+          "statement": "Structural inspection reports each active task's kind, steps, recipe binding, and fully normalized program including density or ordered xx, yy, zz, yz, xz, xy symmetric strain.",
+          "pass_condition": "The inspection JSON exposes both nvt_cell_program modes without reconstructing them from private files.",
+          "type": "binary"
+        },
+        {
+          "id": "closed-invalid-endpoints",
+          "statement": "Unknown cell fields, boolean numeric values, non-finite values, incomplete or reordered strain components, and non-SPD endpoints fail structural loading.",
+          "pass_condition": "Every invalid case stops before environment preflight, lifecycle planning or cleanup, artifact mutation, or native execution.",
+          "type": "binary"
+        },
+        {
+          "id": "round-and-selection-continuity",
+          "statement": "A future inactive cell program does not alter earlier-round task identity, and selection ownership remains on the declared seed groups.",
+          "pass_condition": "Round 0 identity is unchanged until activation; round 1 reports only its active roles and immutable seed-owned selection groups.",
+          "type": "binary"
+        },
+        {
+          "id": "cell-capability-preflight",
+          "statement": "The selected sample suffix requires the explicit LAMMPS recipe cell-program capability while unrelated earlier suffixes do not.",
+          "pass_condition": "Missing capability fails selected-suffix preflight before launch, and GPUMD is rejected structurally.",
+          "type": "binary"
+        },
+        {
+          "id": "block-only-observation-and-recovery",
+          "statement": "Probe and recovery retain the public rN/sample coordinate and never expose segment checkpoint or segment resume state.",
+          "pass_condition": "The operator uses --probe r1/sample and, when authorized, --resume r1/sample; any cell-program native or validation failure rebuilds that ordinary block suffix atomically.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "continuous-npt-temperature-program-inspection",
+      "category": "complex_task",
+      "input": "Inspect a LAMMPS explicit run that appends one round of 1 bar NPT sampling on seed-owned structures. Each task holds 1800 K, ramps to 1200 K, holds 1200 K, ramps to 300 K, then holds 300 K, with 100 ps per segment and 1 fs timestep. Validate and explain the route without starting computation.",
+      "expected_behavior": "Use the official loader to report one 500000-step npt_program task per active seed at 1 bar, the exact five normalized segments, recipe-owned NPT control and 100-step cadence, and block-level recovery.",
+      "assertions": [
+        {
+          "id": "continuous-npt-task-shape",
+          "statement": "Each seed and pressure resolves to one continuous task with the ordered hold/ramp schedule, rather than five independent tasks.",
+          "pass_condition": "Inspection reports kind npt_program, ensemble npt, pressure 1 bar, total 500000 steps, and cumulative segment boundaries 100000 through 500000 for each active seed.",
+          "type": "binary"
+        },
+        {
+          "id": "native-recipe-and-observation",
+          "statement": "The operator checks the canonical three-file NPT recipe loop and describes continuous cell, velocity, and timestep history, fixed pressure, and stepwise target temperature evidence.",
+          "pass_condition": "The recipe has one setup include, one initial velocity creation, one fix npt/unfix loop and no state restart; observations retain the program and pressure identity.",
+          "type": "binary"
+        },
+        {
+          "id": "npt-program-closed-boundary",
+          "statement": "The operator rejects missing pressure, cell endpoints, GPUMD sampling, and segment-level resume while preserving the old completed-round prefix.",
+          "pass_condition": "Invalid inputs fail before native execution; ordinary append-only invocation begins at the first new rN/train and recovery stays at rN/sample.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "multi-neb-and-mixed-md-inspection",
+      "category": "complex_task",
+      "input": "Inspect a DICE explicit sampling plan with two independent NEB paths, one history-enabled path, and one ordinary MD group active in the same round. Explain execution, screen handoff, and recovery without running it.",
+      "expected_behavior": "Use the official loader to report ordered NEB/MD tasks, the closed configurable NEB protocol, matching student NEB and MD operation roles, final/history populations, and block-only recovery.",
+      "assertions": [
+        {
+          "id": "closed-neb-authoring",
+          "statement": "The operator reports exactly one two-frame endpoint role and the closed canonical NEB protocol per path.",
+          "pass_condition": "It requires images, fmax_ev_a, and max_steps; reports exact defaults and constraints for init, method, climb, fixed_atoms, relax, and include_history; rejects retired intermediate_images, max_frames, recipes, MD conditions, arbitrary optimizer/calculator/spring/resource knobs, malformed endpoints, and unsupported endpoint drift before execution.",
+          "type": "binary"
+        },
+        {
+          "id": "multiple-and-mixed-order",
+          "statement": "Multiple NEBs and MD remain independent tasks in global declaration order.",
+          "pass_condition": "The inspection exposes each task's task_id, role/group identity, kind, NEB parameters or MD recipe/conditions, without an intra-round data dependency.",
+          "type": "binary"
+        },
+        {
+          "id": "history-and-committee-semantics",
+          "statement": "Default and history observation populations, endpoint preparation, method identity, and committee ownership are distinguished exactly.",
+          "pass_condition": "Final-only requires convergence and exposes the complete final band including both actual endpoints; history includes the initial and each completed interior band once without repeating fixed endpoints; optional relaxation gives both endpoints separate full budgets and requires both to converge, with optimized endpoints used by final-only screen; ordinary improved-tangent NEB and dynamic DyNEB are not conflated; IDPP always uses MIC while linear interpolation does not; first member drives and all members post-evaluate exposed images.",
+          "type": "binary"
+        },
+        {
+          "id": "neb-operation-and-recovery-boundary",
+          "statement": "The selected student NEB role is added without replacing the route's MD sampler role or public lifecycle coordinate.",
+          "pass_condition": "The report selects one matching student.*.neb role, keeps sampler.lammps.* or sampler.gpumd for MD, and uses only probe/resume rN/sample with no task/image/step checkpoint.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "ase-relax-sampling-inspection-and-recovery",
+      "category": "complex_task",
+      "input": "Inspect an explicit DICE round that relaxes several structures with path history enabled and runs alongside another supported sampling kind. Explain defaults, committee ownership, artifacts, and recovery without launching production work.",
+      "expected_behavior": "Use the official loader to report closed ASE relaxation parameters, matching operation roles, ordered mixed tasks, history observations, fixed-cell semantics, and block-only recovery.",
+      "assertions": [
+        {
+          "id": "closed-relax-authoring",
+          "statement": "The operator reports the complete normalized relaxation protocol and rejects unsupported controls.",
+          "pass_condition": "It requires fmax_ev_a and max_steps; reports defaults for max_step_a=0.1, include_history=true, history_stride=1, and fixed_atoms=[]; and rejects recipes, MD/NEB fields, arbitrary calculators/optimizers, cell relaxation, stress targets, and checkpoints before execution.",
+          "type": "binary"
+        },
+        {
+          "id": "relax-path-and-committee-semantics",
+          "statement": "Relaxation driver and observation ownership are explicit.",
+          "pass_condition": "ASE FIRE holds the cell fixed; the first ordered student member drives optimization; every member post-evaluates observations; history includes the initial structure and completed steps at the configured stride with the converged final structure exactly once; final-only exposes only the final structure.",
+          "type": "binary"
+        },
+        {
+          "id": "relax-roles-artifacts-recovery",
+          "statement": "The operator keeps native operation roles and recovery at public block granularity.",
+          "pass_condition": "DeepMD-PyTorch selects student.deepmd.pt.relax and NEP selects student.nep.relax; task evidence is validated before reuse; non-convergence or corruption fails rN/sample; probe/resume remains at rN/sample without task/step checkpoints.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "completed-iter-append-round",
+      "category": "anti_default",
+      "input": "This explicit two-round iter is complete. Add a third trailing round and continue it; do not rerun the first two rounds.",
+      "expected_behavior": "Verify exact append-only compatibility, preflight and use ordinary invocation, preserve the old round prefix, and let DICE rebuild stale terminal FP before the new suffix.",
+      "assertions": [
+        {
+          "id": "ordinary-extension-path",
+          "statement": "Completed-iter extension is not simulated with cleanup or --resume.",
+          "pass_condition": "The response uses ordinary preflight/run and identifies the first new rN/train as the continuation point.",
+          "type": "binary"
+        },
+        {
+          "id": "append-only-guard",
+          "statement": "The operator requires the former normalized round sequence to be an exact prefix.",
+          "pass_condition": "Shrink, reorder, renumber, middle insertion, higher-round orphan evidence, and live or unknown terminal ownership all stop before cleanup.",
+          "type": "binary"
+        },
+        {
+          "id": "prefix-and-terminal-ownership",
+          "statement": "Old round evidence is preserved while stale terminal publication is lifecycle-owned cleanup.",
+          "pass_condition": "The response does not delete state manually and verifies old round artifacts plus the rebuilt terminal block after completion.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "element-balanced-selector-boundaries-and-fallback",
+      "category": "complex_task",
+      "input": "Inspect four DICE choices: ELEMENT_JOINT_DIRECT screen prescreen, ELEMENT_DIRECT screen selector with a committee student, ELEMENT_JOINT_DIRECT terminal FP, and ELEMENT_DIRECT terminal FP with a committee teacher.",
+      "expected_behavior": "Report legal coordinates, candidate/background meaning, element-balanced invariants, and only the two known-shape deterministic random fallbacks without inventing committee descriptors.",
+      "assertions": [
+        {
+          "id": "element-policy-coordinates",
+          "statement": "The operator distinguishes screen.prescreen, screen.policy, and fp.policy legal values.",
+          "pass_condition": "ELEMENT_JOINT_DIRECT is accepted only as a single-student prescreen or single-teacher terminal policy; ELEMENT_DIRECT is accepted only as screen.policy or fp.policy.",
+          "type": "binary"
+        },
+        {
+          "id": "element-scientific-semantics",
+          "statement": "The operator reports the fixed element-explicit representation without public tuning knobs.",
+          "pass_condition": "The report includes per-element means, equal present-element weight, atom-count and supercell-replication invariance, legal missing elements, presence-aware distance, candidate-only ELEMENT_DIRECT, and training-background ELEMENT_JOINT_DIRECT.",
+          "type": "binary"
+        },
+        {
+          "id": "committee-random-fallback",
+          "statement": "Only known committee ownership triggers the temporary ELEMENT_DIRECT random fallback.",
+          "pass_condition": "Structural inspection exposes requested ELEMENT_DIRECT, effective random, committee_descriptor_unavailable, descriptor owner/model shape, and no descriptor readout; the canonical policy-resolution evidence preserves the requested/effective distinction and never falls back for ELEMENT_JOINT_DIRECT or malformed single-model evidence.",
+          "type": "binary"
+        },
+        {
+          "id": "no-new-operational-surface",
+          "statement": "Element selectors reuse existing lifecycle and operation surfaces.",
+          "pass_condition": "The operator invents no CLI flag, block, resume target, profile role, runtime key, resource, launcher, native recipe field, descriptor cache, or committee member aggregation.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "joint-direct-configuration-boundaries",
+      "category": "complex_task",
+      "input": "Inspect a DICE run that uses a single-student JOINT_DIRECT prescreen and single-teacher JOINT_DIRECT terminal FP selection.",
+      "expected_behavior": "Report the two distinct JOINT_DIRECT placements, validate their single-model applicability and quota rules, and preserve existing selector and lifecycle ownership.",
+      "assertions": [
+        {
+          "id": "joint-screen-is-prescreen",
+          "statement": "Student JOINT_DIRECT is reported as the screen.pool prescreen instead of a screen.policy value or GMM supplement.",
+          "pass_condition": "The operator requires positive pool values, rejects student_p and safe fill, reports pool>=N bypass, and keeps screen.policy as DIRECT, FPS, or random.",
+          "type": "binary"
+        },
+        {
+          "id": "joint-fp-is-terminal",
+          "statement": "Teacher JOINT_DIRECT is reported as the terminal fp.policy with no keep-based bypass.",
+          "pass_condition": "The operator limits it to one teacher, retains final/all-round candidate scope, uses teacher train background, and reports candidate-only legal underfill.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "student-first-visualization-boundaries",
+      "category": "typical_task",
+      "input": "Inspect a DICE run that omits visualize and contains screen.gate_order, then explain how to disable selection plots.",
+      "expected_behavior": "Reject gate_order through the official loader and report the top-level diagnostic boolean without inventing migration or plotting controls.",
+      "assertions": [
+        {
+          "id": "retired-gate-order",
+          "statement": "Every explicit screen.gate_order value is unsupported and has no teacher-first adoption path.",
+          "pass_condition": "Inspection fails before reconciliation or cleanup and instructs the user to remove the field rather than translate it.",
+          "type": "binary"
+        },
+        {
+          "id": "default-on-visualize",
+          "statement": "Visualization defaults on and only top-level boolean false disables it.",
+          "pass_condition": "The operator reports non-authoritative sibling rN/visualize and fp/visualize diagnostics, no canonical-result invalidation or lifecycle-planning effect, and no CPU/UMAP/environment knob.",
+          "type": "binary"
+        },
+        {
+          "id": "structure-mean-diagnostic",
+          "statement": "New eligible runs retain elements and add structure.png/svg/npz with all-atom descriptor means.",
+          "pass_condition": "Reports one point per structure, atom-count weighting, same role-specific layers and existing visualize boolean; no new knobs or axis equivalence across independently fitted views.",
+          "type": "binary"
+        },
+        {
+          "id": "structure-cache-no-history-backfill",
+          "statement": "Historical element-only caches are not enough to reconstruct structure means.",
+          "pass_condition": "Does not start model inference, scientific resume, or historical backfill for new structure figures; distinguishes new-cache redraw, fewer-than-three skipped and legacy unavailable without treating plots as completion authority.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "should-trigger-probe",
+      "category": "should_trigger",
+      "input": "Check whether DICE can resume exactly from r1/sample; r1/train is missing while an earlier r0/train result remains valid.",
+      "expected_behavior": "Use dice-operator to perform the read-only exact-resume feasibility probe and report the blocking dependency without widening the target.",
+      "assertions": [
+        {
+          "id": "exact-probe",
+          "statement": "The skill validates the coordinate and uses --probe r1/sample as a feasibility query.",
+          "pass_condition": "The result uses dice.lifecycle.resume-feasibility revision 1, status=blocked, target=r1/sample, and reports blocking_result=r1/train, consuming_block=r1/sample, recommended_resume=r1/train, and a reason.",
+          "type": "binary"
+        },
+        {
+          "id": "no-implicit-widen",
+          "statement": "A blocked exact target is not silently replaced by the recommended earlier producer.",
+          "pass_condition": "No cleanup or execution occurs, and resuming r1/train requires a new explicit user authorization.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "runnable-probe-static-suffix-preflight",
+      "category": "complex_task",
+      "input": "Probe exact resume from r1/sample with explicit environment and execution profiles; all persisted dependencies are consumer-runnable, but one later suffix recipe path is missing.",
+      "expected_behavior": "Validate dependencies and then fail the runnable suffix's static preflight without native work, remote contact, or mutation.",
+      "assertions": [
+        {
+          "id": "profiles-and-full-suffix",
+          "statement": "A dependency-runnable probe validates the complete selected suffix and explicitly supplied profiles.",
+          "pass_condition": "The missing later recipe is reported as an ordinary suffix-preflight error rather than a runnable feasibility object.",
+          "type": "binary"
+        },
+        {
+          "id": "probe-side-effect-boundary",
+          "statement": "Probe performs only read-only dependency validation and static suffix preflight.",
+          "pass_condition": "No environment activation for scientific work, native execution, execution-target contact, cleanup, submission, polling, publication, or artifact mutation occurs.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "exact-resume-forced-boundary",
+      "category": "typical_task",
+      "input": "All persisted dependencies for r1/sample and its suffix are consumer-runnable. Rebuild exactly from r1/sample and leave the earlier canonical results untouched.",
+      "expected_behavior": "Preflight and execute the exact selected current-iter suffix without reusing the target or widening to an earlier block.",
+      "assertions": [
+        {
+          "id": "exact-target",
+          "statement": "The user-selected resume target remains the first executed public block.",
+          "pass_condition": "The command uses --resume r1/sample, invalidates r1/sample and later current-iter canonical results only after dependency and full-suffix preflight, and never selects an earlier producer.",
+          "type": "binary"
+        },
+        {
+          "id": "target-is-forced",
+          "statement": "An exact resume never reuses the selected target even if its old result is consumer-runnable.",
+          "pass_condition": "r1/sample is rebuilt, while earlier reusable canonical results and other iters remain untouched.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "artifact-only-default-continuation",
+      "category": "anti_default",
+      "input": "Run a DICE iter whose terminal canonical result is consumer-runnable. Current scientific settings differ from those used previously, an unused early-prefix result is damaged, and no historical fingerprint or success marker exists.",
+      "expected_behavior": "Use backward result-dependency planning, accept the terminal result, and return a no-op without consulting retired lifecycle state.",
+      "assertions": [
+        {
+          "id": "terminal-cutoff",
+          "statement": "A consumer-runnable terminal canonical result closes the live dependency traversal.",
+          "pass_condition": "Ordinary invocation selects no block, performs no cleanup or execution, and ignores current-config drift and unused prefix damage.",
+          "type": "binary"
+        },
+        {
+          "id": "sole-completion-authority",
+          "statement": "No second lifecycle completion record is required or synthesized.",
+          "pass_condition": "The response does not read, compare, write, rename, or recreate a fingerprint, success marker, validated-prefix receipt, or equivalent sidecar.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "retired-state-hard-cut",
+      "category": "anti_default",
+      "input": "Migrate this DICE run by keeping fingerprint_vars, passing --validated-prefix-receipt, and generating fresh block success markers under a new name.",
+      "expected_behavior": "Reject all retired public and hidden surfaces without aliases, compatibility codecs, or replacement completion sidecars.",
+      "assertions": [
+        {
+          "id": "retired-arguments-rejected",
+          "statement": "Retired configuration and CLI inputs are not accepted or translated.",
+          "pass_condition": "fingerprint_vars and --validated-prefix-receipt are rejected, and no alternative digest/fingerprint field is proposed.",
+          "type": "binary"
+        },
+        {
+          "id": "no-renamed-marker",
+          "statement": "Canonical results remain the only durable public-block completion authority.",
+          "pass_condition": "No success marker, receipt, sentinel, sidecar, or renamed equivalent is created or required.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "operation-receipt-is-not-completion",
+      "category": "typical_task",
+      "input": "A scheduler operation receipt says r1/sample succeeded, but the canonical sample result is missing. Decide whether the block is complete.",
+      "expected_behavior": "Treat the receipt as bounded operation/reattachment evidence only and classify the public block from its canonical result.",
+      "assertions": [
+        {
+          "id": "canonical-result-required",
+          "statement": "Operation success cannot complete a public lifecycle block.",
+          "pass_condition": "The missing canonical result is not complete even though the scheduler or task receipt reports success.",
+          "type": "binary"
+        },
+        {
+          "id": "receipt-scope",
+          "statement": "The operation receipt is used only for safe reattachment or collection of its bound attempt.",
+          "pass_condition": "The response does not promote the receipt into lifecycle completion, dependency validity, or a public resume authority.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "should-not-trigger-source-implementation",
+      "category": "should_not_trigger",
+      "input": "Refactor the DICE lifecycle state implementation and commit it.",
+      "expected_behavior": "Do not use dice-operator as the implementation or Git workflow.",
+      "assertions": [
+        {
+          "id": "handoff-source-and-git",
+          "statement": "The source/Git request follows the workspace development instructions.",
+          "pass_condition": "dice-operator performs no source edit or Git command.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "near-miss-interface-sync",
+      "category": "near_miss",
+      "input": "All implementation issues are complete; check whether the changed run config and CLI require a dice-operator update.",
+      "expected_behavior": "Treat public-interface skill maintenance as a separate development task, preserving the current run and operator scope.",
+      "assertions": [
+        {
+          "id": "maintenance-boundary",
+          "statement": "Source/skill-maintenance work is separate from operating a DICE run.",
+          "pass_condition": "The agent identifies the maintenance request and follows the applicable development instructions rather than running a lifecycle operation or requiring private owner maps.",
+          "type": "binary"
+        },
+        {
+          "id": "no-incidental-run",
+          "statement": "A documentation/interface audit does not authorize scientific work.",
+          "pass_condition": "No DICE run, resume, native backend launch or Git mutation is performed as an incidental operation.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "inference-frame-pool-placement",
+      "category": "regression",
+      "input": "Inspect multi-GPU label and GMM score placement, reject inference MPS and distributed resources, explain ELEMENT_DIRECT candidate feature reuse and stage recovery without launching any job.",
+      "expected_behavior": "Use official execution loader and keep configuration acceptance separate from physical multi-GPU qualification.",
+      "assertions": [
+        {
+          "id": "inference-pool-closed-capabilities",
+          "statement": "Only implemented inference roles accept multi-GPU single-node pool resources.",
+          "pass_condition": "Accepts the eight implemented label/score roles with pool per_gpu=1, one node/process and direct launcher; rejects per_gpu>1 and distributed inference; reference roles remain single-owner.",
+          "type": "binary"
+        },
+        {
+          "id": "inference-features-and-recovery",
+          "statement": "Candidate reuse and shards retain lifecycle semantics.",
+          "pass_condition": "Reports validation of model, dataset, schema, canonical order and element presence; only background is independently read; DPA4C fits once; failed workers cancel the operation and resume rebuilds the existing whole block; makes no physical multi-GPU speed claim from single-GPU tests.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "md-mc-closed-budget-and-shared-pool",
+      "category": "regression",
+      "input": "Inspect 1773 K MDMC with 100000 MD steps, 1 fs recipe, one Y/Zr swap every 10 steps. Explain failed prefixes, shared MPS placement and sample resume without launching native work. Also inspect NPT+MC at 1 and 100 bar and distinguish evolving cell from NVT.",
+      "expected_behavior": "Use official loaders; distinguish attempts/accepts and measured native qualification from implementation.",
+      "assertions": [
+        {
+          "id": "md-mc-budget",
+          "statement": "Closed MDMC scientific controls are normalized without invented resources.",
+          "pass_condition": "Reports nvt, identity_swap, Y/Zr, steps=100000, planned attempts=10000, 100 ps from recipe timestep; rejects bool counts, invalid move and GPUMD. GPU/per_gpu/MPS stay outside scientific group. NPT requires pressures_bar, expands temperature × pressure and reports npt; NVT forbids pressure.",
+          "type": "binary"
+        },
+        {
+          "id": "md-mc-formal-evidence-and-recovery",
+          "statement": "Only formal chain states and valid failed prefixes reach the existing catalog.",
+          "pass_condition": "Reports first-member MD/MC, formal-frame committee evaluation inside original slot, failed status and unknown actual totals, healthy refill, whole rN/sample recovery, no cycle resume or live multi-GPU/MPS claim from simulated tests. NPT identity swaps use the same instantaneous cell, hence ΔV=0 and the potential-energy criterion remains valid.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "deepmd-native-preset-routing",
+      "category": "regression",
+      "input": "Inspect a single PT DPA4 teacher and PT DPA4C student with native model.preset recipes; explain dispatch, typemap and compression without launching compute.",
+      "expected_behavior": "Use the official loader and recipe-family resolver without duplicating native presets or adding public fields.",
+      "assertions": [
+        {
+          "id": "preset-native-ownership",
+          "statement": "Native presets preserve family routing and backend ownership.",
+          "pass_condition": "Recognizes DPA4/DPA4C preset family prefixes; public cli stays pt; DPA4 uses --pt and DPA4C uses --pt-expt; keeps native foundation typemap and distinct member seeds; does not invent preset architecture or DPA4 compression.",
+          "type": "binary"
+        },
+        {
+          "id": "spin-scope",
+          "statement": "Charge/spin embeddings do not imply native magnetic-spin dynamics.",
+          "pass_condition": "Separates OMol25 multiplicity/charge conditioning from per-atom spin and does not promise Kokkos runtime overrides or portability of arbitrary old pt2 files.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "clean-native-sampling-field-ownership",
+      "category": "regression",
+      "input": "Inspect recipe-only LAMMPS/GPUMD groups and optional DICE temperature/steps overrides, targets and auxiliary inputs without running engines.",
+      "expected_behavior": "Use official loader and read-only preflight; preserve native algorithms and omitted values.",
+      "assertions": [
+        {
+          "id": "clean-native-presence-and-targets",
+          "statement": "Explicit DICE fields override selected native targets; omitted fields inherit.",
+          "pass_condition": "Accepts recipe only and unknown structural T/steps; exposes typed requests, targets and declared relative inputs; requires no DICE placeholders/mode/capability markers; ambiguous overrides fail before cleanup.",
+          "type": "binary"
+        },
+        {
+          "id": "native-result-and-screen-reuse",
+          "statement": "Native results preserve backend storage and existing lifecycle recovery.",
+          "pass_condition": "Explains catalog/replay, optimizer versus MD coordinates, valid failed MD prefixes, cancellation propagation, block-only resume and producer profile as historical provenance rather than current execution binding.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "portable-installed-package",
+      "category": "should_trigger",
+      "input": "Inspect run.json using an installed DICE package; no source checkout or AGENTS.md is available.",
+      "expected_behavior": "Use the current DICE Python and the bundled helper without an owner-specific checkout.",
+      "assertions": [
+        {
+          "id": "installed-resolution",
+          "statement": "The installed package is sufficient.",
+          "pass_condition": "The helper loads the importable DICE, returns structural results and creates no lifecycle files.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "portable-explicit-source",
+      "category": "complex_task",
+      "input": "The run and skill are in separate paths containing spaces. Use this explicit DICE checkout for structural inspection.",
+      "expected_behavior": "Resolve script paths relative to the installed skill and select the supplied checkout.",
+      "assertions": [
+        {
+          "id": "explicit-source-precedence",
+          "statement": "A selected checkout is the code source.",
+          "pass_condition": "Passes --repo-root for the supplied checkout; does not import an unrelated installed DICE or require AGENTS.md.",
+          "type": "binary"
+        },
+        {
+          "id": "separate-run-owner",
+          "statement": "Inputs remain run-owned.",
+          "pass_condition": "The original run directory and relative input semantics are preserved; no configuration is copied into the code or skill directory.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "portable-agent-install",
+      "category": "typical_task",
+      "input": "Install this DICE Operator folder for my current local coding agent.",
+      "expected_behavior": "Install the complete standard skill folder in that agent discovery location.",
+      "assertions": [
+        {
+          "id": "complete-agent-neutral-folder",
+          "statement": "Core behavior is provider neutral.",
+          "pass_condition": "SKILL.md, references and scripts are preserved; no other skill, MCP service, hook or hardcoded user path is required.",
+          "type": "binary"
+        },
+        {
+          "id": "no-unrequested-calculation",
+          "statement": "Installation does not start scientific work.",
+          "pass_condition": "The agent checks skill discovery without launching training, sampling or external DFT jobs.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "missing-dice-runtime",
+      "category": "insufficient_information",
+      "input": "Inspect my run using a Python interpreter that does not contain DICE.",
+      "expected_behavior": "Report the missing DICE dependency and the two supported resolution paths.",
+      "assertions": [
+        {
+          "id": "actionable-runtime-error",
+          "statement": "A missing runtime has a concrete next step.",
+          "pass_condition": "Suggests the Python environment containing DICE or --repo-root for the supplied checkout; does not search the entire machine or fabricate a successful validation.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "reuse-existing-authorization",
+      "category": "anti_default",
+      "input": "Use the same configuration and resource choices I already approved, and start the iter.",
+      "expected_behavior": "Reuse established choices and authorization; preflight then run.",
+      "assertions": [
+        {
+          "id": "no-repeat-approval",
+          "statement": "Previously approved choices do not create a new approval gate.",
+          "pass_condition": "No confirmation is requested for unchanged approved fields or official defaults; new material departures are surfaced if any.",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "proportional-field-answer",
+      "category": "near_miss",
+      "input": "What does sample.rounds mean in this configuration?",
+      "expected_behavior": "Answer the field question using only relevant configuration/sampling material.",
+      "assertions": [
+        {
+          "id": "scoped-answer",
+          "statement": "A field question does not require an operation dossier.",
+          "pass_condition": "Explains round activation and mutually exclusive round_count without reading every backend guide, reporting all execution settings or launching DICE.",
+          "type": "binary"
+        }
+      ]
+    }
+  ]
+}

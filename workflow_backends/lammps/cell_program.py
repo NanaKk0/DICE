@@ -118,7 +118,11 @@ def write_lammps_cell_schedule(
 def render_lammps_cell_program_input(
     recipe_text: str,
     schedule: dict[str, object],
+    *, control: dict | None = None,
 ) -> str:
+    group=control['group'] if control is not None else 'all'
+    damping=control['damping'] if control is not None else '0.1'
+    extra=(' '+' '.join(control['extra'])) if control is not None and control['extra'] else ''
     lines = [recipe_text.rstrip(), "# DICE_BEGIN_CELL_PROGRAM"]
     intervals = tuple(schedule["intervals"])
     initial_prism = tuple(schedule["initial_prism_angstrom"])
@@ -146,9 +150,9 @@ def render_lammps_cell_program_input(
                 if int(item["segment_index"]) == segment_index
             )
             lines.append(
-                f"fix dice_cell_nvt_{segment_index} all nvt temp "
+                f"fix dice_cell_nvt_{segment_index} {group} nvt temp "
                 f"{segment_intervals[0]['start_temperature_k']} "
-                f"{segment_intervals[-1]['stop_temperature_k']} 0.1"
+                f"{segment_intervals[-1]['stop_temperature_k']} {damping}{extra}"
             )
             x, y, z, xy, xz, yz = segment_intervals[-1][
                 "end_prism_angstrom"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Sequence
 
@@ -22,7 +23,7 @@ from workflow_core.structures.formats import read_extxyz_structures
 
 
 REQUEST_SCHEMA = "dice.native.ase-neb-request"
-REQUEST_REVISION = 4
+REQUEST_REVISION = 5
 POLICY_IDENTITY = {"name": "committee-force-deviation", "revision": 1}
 
 
@@ -79,6 +80,7 @@ def execute_manifest(path: str | Path) -> None:
         "models",
         "seeds",
         "groups",
+        "task_inventory",
     }:
         raise ValueError("ASE NEB worker request fields are malformed")
     if (
@@ -99,6 +101,11 @@ def execute_manifest(path: str | Path) -> None:
     raw_models = payload["models"]
     raw_seeds = payload["seeds"]
     raw_groups = payload["groups"]
+    task_inventory = payload['task_inventory']
+    if (not isinstance(task_inventory, list) or not task_inventory
+        or any(not isinstance(name, str) or not re.fullmatch(r'task_\d{6}', name) for name in task_inventory)
+        or len(set(task_inventory)) != len(task_inventory)):
+        raise ValueError('ASE NEB worker global task inventory is malformed')
     if (
         not isinstance(raw_models, list)
         or not raw_models
@@ -138,6 +145,8 @@ def execute_manifest(path: str | Path) -> None:
         )
     groups: list[SamplingConditionGroup] = []
     for group in raw_groups:
+        if not isinstance(group, dict) or group.get('task_id') not in task_inventory:
+            raise ValueError('ASE NEB worker task is outside its declared inventory')
         required_group_fields = {
             "condition_group_id",
             "task_id",
@@ -216,6 +225,7 @@ def execute_manifest(path: str | Path) -> None:
             str(group["condition_group_id"]): str(group["task_id"])
             for group in raw_groups
         },
+        known_task_ids=tuple(task_inventory),
     )
     backend.execute(SamplingExecutionRequest(evidence))
 

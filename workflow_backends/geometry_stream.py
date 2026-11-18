@@ -32,6 +32,8 @@ class GeometryStreamServer:
 
     The acknowledgement makes both byte and atom occupancy explicit: at most
     one validated frame is in flight.  A frame is never split.
+    Acknowledgement waits follow worker liveness because bounded consumers
+    may pause input while fitting a reference or computing a descriptor.
     """
 
     def __init__(
@@ -124,7 +126,7 @@ class GeometryStreamServer:
                     self.max_inflight_bytes = max(self.max_inflight_bytes, len(payload))
                     self.max_inflight_atoms = max(self.max_inflight_atoms, atoms)
                     self._send_record(connection, _MAGIC, payload, consumer_alive)
-                    acknowledgement = _recv_exact(connection, _ACK.size)
+                    acknowledgement = self._recv_acknowledgement(connection, consumer_alive)
                     magic, acknowledged = _ACK.unpack(acknowledgement)
                     if magic != _ACK_MAGIC or acknowledged != ordinal:
                         raise GeometryStreamError(
@@ -138,7 +140,9 @@ class GeometryStreamServer:
                 separators=(",", ":"),
             ).encode("utf-8")
             self._send_record(connection, _EOF_MAGIC, terminal, consumer_alive)
-            magic, acknowledged = _ACK.unpack(_recv_exact(connection, _ACK.size))
+            magic, acknowledged = _ACK.unpack(
+                self._recv_acknowledgement(connection, consumer_alive)
+            )
             if magic != _ACK_MAGIC or acknowledged != ordinal:
                 raise GeometryStreamError("geometry stream terminal acknowledgement is invalid")
         except (BrokenPipeError, ConnectionError, socket.timeout) as exc:
@@ -155,6 +159,29 @@ class GeometryStreamServer:
                 self._short_socket_dir.rmdir()
             except FileNotFoundError:
                 pass
+
+    def _recv_acknowledgement(
+        self, connection: socket.socket, consumer_alive: Callable[[], bool]
+    ) -> bytes:
+        previous_timeout = connection.gettimeout()
+        connection.settimeout(min(self.timeout_seconds, 0.25))
+        chunks = bytearray()
+        try:
+            while len(chunks) < _ACK.size:
+                try:
+                    part = connection.recv(_ACK.size - len(chunks))
+                except socket.timeout as exc:
+                    if not consumer_alive():
+                        raise GeometryStreamError(
+                            "geometry stream worker exited while awaiting acknowledgement"
+                        ) from exc
+                    continue
+                if not part:
+                    raise GeometryStreamError("geometry stream ended mid-record")
+                chunks.extend(part)
+            return bytes(chunks)
+        finally:
+            connection.settimeout(previous_timeout)
 
     @staticmethod
     def _send_record(

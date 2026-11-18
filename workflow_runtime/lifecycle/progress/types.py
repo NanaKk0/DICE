@@ -413,7 +413,7 @@ class SamplingBlockSummary:
     tasks: int
     systems: int
     temperatures: int
-    total_steps: int
+    total_steps: int | None
     elapsed_seconds: float | None = None
     kind_counts: tuple[tuple[str, int], ...] = ()
     mc_attempts: int = 0
@@ -429,11 +429,11 @@ class SamplingBlockSummary:
                     self.tasks,
                     self.systems,
                     self.temperatures,
-                    self.total_steps,
                     self.mc_attempts,
                     self.failed_tasks,
                 )
             )
+            or (self.total_steps is not None and self.total_steps < 0)
         ):
             raise ValueError("sampling summary fields are invalid")
         kinds = tuple((str(kind), int(count)) for kind, count in self.kind_counts)
