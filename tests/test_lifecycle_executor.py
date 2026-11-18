@@ -2710,7 +2710,7 @@ class LifecycleLifecycleExecutorTests(unittest.TestCase):
 
             self.assertFalse(extra.exists())
             self.assertEqual(
-                [path.name for path in (sample / "tasks").iterdir() if path.is_dir()],
+                sorted(path.name for path in (sample / "tasks").iterdir() if path.is_dir()),
                 ["task_000000", "task_000001"],
             )
 
@@ -2739,7 +2739,7 @@ class LifecycleLifecycleExecutorTests(unittest.TestCase):
 
             self.assertFalse(extra.exists())
             self.assertEqual(
-                [path.name for path in (sample / "tasks").iterdir() if path.is_dir()],
+                sorted(path.name for path in (sample / "tasks").iterdir() if path.is_dir()),
                 ["task_000000", "task_000001"],
             )
 
